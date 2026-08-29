@@ -3391,11 +3391,37 @@ void sccp_device_setMWI(devicePtr device)
 {
 	device->voicemailStatistic.newmsgs = 0;
 	device->voicemailStatistic.oldmsgs = 0;
-	for (uint8_t instance = SCCP_FIRST_LINEINSTANCE; instance < device->lineButtons.size; instance++) {
-		if(device->lineButtons.instance[instance]) {
-			linePtr l = device->lineButtons.instance[instance]->line;
-			device->voicemailStatistic.newmsgs += l->voicemailStatistic.newmsgs;
-			device->voicemailStatistic.oldmsgs += l->voicemailStatistic.oldmsgs;
+	/* A line bound to more than one button (e.g. "button = line,40" listed
+	 * twice) must only have its voicemail count added once - otherwise a
+	 * device with N buttons on the same line reports N times the real
+	 * message count.
+	 *
+	 * lineButtons.size is read once into a local: it is mutated from the
+	 * session thread (sccp_linedevice_createButtonsArray / ...delete...)
+	 * while this function runs on the mwi notification thread, so sizing
+	 * the tracking array from one read while bounding the loop by another
+	 * would let counted_size walk past the end of the array. The same
+	 * single read also keeps the array length non-zero. */
+	const uint8_t buttonCount = device->lineButtons.size;
+	if (buttonCount > SCCP_FIRST_LINEINSTANCE) {
+		sccp_line_t * counted[buttonCount];
+		uint8_t counted_size = 0;
+		for (uint8_t instance = SCCP_FIRST_LINEINSTANCE; instance < buttonCount; instance++) {
+			if(device->lineButtons.instance[instance]) {
+				linePtr l = device->lineButtons.instance[instance]->line;
+				boolean_t already_counted = FALSE;
+				for (uint8_t i = 0; i < counted_size; i++) {
+					if (counted[i] == l) {
+						already_counted = TRUE;
+						break;
+					}
+				}
+				if (!already_counted) {
+					device->voicemailStatistic.newmsgs += l->voicemailStatistic.newmsgs;
+					device->voicemailStatistic.oldmsgs += l->voicemailStatistic.oldmsgs;
+					counted[counted_size++] = l;
+				}
+			}
 		}
 	}
 	sccp_log((DEBUGCAT_MWI)) (VERBOSE_PREFIX_3 "%s: (sccp_device_setMWI), newmsgs:%d, oldmsgs:%d\n", device->id, device->voicemailStatistic.newmsgs, device->voicemailStatistic.oldmsgs);
