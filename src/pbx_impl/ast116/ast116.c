@@ -3925,11 +3925,13 @@ static int unload_module(void)
 
 static enum ast_module_load_result load_module(void)
 {
- 	if (ast_module_check("chan_skinny.so")) {
- 		pbx_log(LOG_ERROR, "Chan_skinny is loaded. Please check modules.conf and remove chan_skinny before loading chan_sccp.\n");
- 		return AST_MODULE_LOAD_SUCCESS;
- 	}
-
+	/* The chan_skinny check lives inside the do{} below, which breaks out to
+	 * AST_MODULE_LOAD_DECLINE. An earlier copy of the same check used to sit here
+	 * and returned AST_MODULE_LOAD_SUCCESS instead: asterisk then reported the
+	 * module as Running although nothing had been initialised - no cli commands,
+	 * no listening socket, no configuration - and the matching unload_module tore
+	 * down state that was never built, taking asterisk down with it on every
+	 * restart. Declining is the only correct answer here. */
 	enum ast_module_load_result res = AST_MODULE_LOAD_DECLINE;
 	do {
 		if (ast_module_check("chan_skinny.so")) {
