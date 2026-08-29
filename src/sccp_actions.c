@@ -824,6 +824,17 @@ void handle_register(constSessionPtr s, devicePtr maybe_d, constMessagePtr msg_i
 		return;
 	}
 
+	/* A Register carrying no device name cannot identify anything, and letting it
+	 * through means an anonymous device gets built around an empty id further down.
+	 * iPbx.endpoint_create() returns NULL for an empty id, and every later state
+	 * change would then have to cope with a device that has no endpoint. Refuse it
+	 * here instead, before any device is created. */
+	if (sccp_strlen_zero(deviceName)) {
+		pbx_log(LOG_WARNING, "SCCP: Register message without a device name, rejecting session.\n");
+		sccp_session_reject(s, "Invalid DeviceName");
+		return;
+	}
+
 	if (!skinny_devicetype_exists(deviceType)) {
 		pbx_log(LOG_NOTICE, "%s: We currently do not (fully) support this device type (%d).\n" "Please send this device type number plus the information about the phone model you are using to one of our developers.\n" "Be Warned you should Expect Trouble Ahead\nWe will try to go ahead (Without any guarantees)\n", deviceName, deviceType);
 	}

@@ -592,7 +592,11 @@ int sccp_device_setRegistrationState(constDevicePtr d, const skinny_registration
 	}
 	
 #ifdef CS_AST_HAS_STASIS_ENDPOINT
-	if (iPbx.endpoint_online && iPbx.endpoint_offline) {
+	/* d->endpoint has to be checked as well, not just the callbacks: it stays NULL
+	 * when iPbx.endpoint_create() was given an empty device name, which is what an
+	 * anonymous device built from a truncated Register message carries. Passing that
+	 * NULL on to ast_endpoint_set_state() dereferences it inside asterisk. */
+	if (d->endpoint && iPbx.endpoint_online && iPbx.endpoint_offline) {
 		if (SKINNY_DEVICE_RS_OK == state) {
 			struct sockaddr_storage ourip = { 0 };
 			sccp_session_getOurIP(d->session, &ourip, 0);
