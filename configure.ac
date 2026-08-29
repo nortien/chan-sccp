@@ -47,7 +47,13 @@ AM_MAINTAINER_MODE([disable])								dnl Switches off auto-regeneration on confi
 											dnl make sure to run tool/bootstrap.sh before checking in configure changes to svn
 
 dnl AM_INIT_AUTOMAKE([1.14 -Wno-portability check-news dist-bzip2 nostdinc subdir-objects])
-AM_INIT_AUTOMAKE([1.10 -Wno-portability check-news dist-bzip2 nostdinc subdir-objects foreign])
+dnl check-news dropped: it makes `make dist` grep NEWS for $(VERSION), and VERSION
+dnl carries the branch name, so a distribution could only ever be built from a branch
+dnl whose name had been written into NEWS by hand. The release target does its own
+dnl NEWS check, which is where that gate belongs.
+dnl tar-pax: one conf/tftp/ filename exceeds the 99-character ustar path limit, and
+dnl the default tar format drops it while dist still reports success.
+AM_INIT_AUTOMAKE([1.10 -Wno-portability dist-bzip2 nostdinc subdir-objects foreign tar-pax])
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
 AC_DISABLE_STATIC([])
 

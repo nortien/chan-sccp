@@ -158,8 +158,12 @@ gitRepo() {
 	# Current branch
 	VCS_BRANCH="$(git rev-parse --symbolic-full-name --verify "$(git name-rev --name-only --no-undefined HEAD 2>/dev/null)" 2>/dev/null | sed -e 's:refs/heads/::' | sed -e 's:refs/::')"
 
-	# Cache the description
-	local DESCRIPTION="$(git describe --long --tags 2>/dev/null)"
+	# Cache the description. The abbreviation length is pinned to match
+	# VCS_SHORT_HASH above: git picks a longer one on its own as a repository
+	# grows, and the two sed expressions below strip "-g${VCS_SHORT_HASH}" by
+	# literal text, so a mismatch leaves the hash glued onto VCS_TAG and
+	# VCS_TICK - both of which are published, VCS_TAG through AMI.
+	local DESCRIPTION="$(git describe --long --tags --abbrev=7 2>/dev/null)"
 
 	# Current or last tag ancestor (empty if no tags)
 	VCS_TAG="$(echo "${DESCRIPTION}" | sed -e "s:-g${VCS_SHORT_HASH}\$::" -e 's:-[0-9]*$::')"

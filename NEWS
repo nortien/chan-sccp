@@ -1,3 +1,14 @@
+Version: 4.3.5_stable
+==========================
+
+ - Support for Asterisk 20, 21, 22 and 23, and for FreePBX 17 on Debian 12.
+ - Asterisk version auto-detection no longer needs --with-asterisk-version.
+ - Fixes to line-button array handling, session thread teardown, RTP payload
+   registration, ACL printing and configuration reload.
+ - `make dist` works again: the ChangeLog rule no longer depends on a tag that
+   does not exist, every version group is configured and distributed, and the
+   release target no longer opens an interactive editor.
+
 Version: v4.3.4_DEV
 ==========================
 

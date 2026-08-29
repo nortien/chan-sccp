@@ -620,7 +620,8 @@ noinst_HEADERS = chan_sccp.h			sccp_actions.h			sccp_cli.h			sccp_devstate.h			\
 			  revision.h			sccp_channel.h			sccp_device.h			sccp_event.h			\
 			  sccp_labels.h			sccp_protocol.h			sccp_enum.h			sccp_codec.h			\
 			  define.h			sccp_netsock.h			sccp_xml.h			sccp_webservice.h		\
-			  sccp_utils.h			sccp_featureParkingLot.h	sccp_transport.h
+			  sccp_utils.h			sccp_featureParkingLot.h	sccp_transport.h		\
+			  forward_declarations.h	sccp_globals.h			sccp_xml_embedded.h
 
 libsccp_la_SOURCES = sccp_callinfo.c 		sccp_channel.c			sccp_device.c			sccp_debug.c			\
 			  sccp_indicate.c 		sccp_pbx.c 			sccp_session.c			sccp_threadpool.c		\
@@ -695,15 +696,6 @@ $(srcdir)/config.h.in: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 
 distclean-hdr:
 	-rm -f config.h stamp-h1
-
-uninstall-csmodLTLIBRARIES:
-	@$(NORMAL_UNINSTALL)
-	@list='$(csmod_LTLIBRARIES)'; test -n "$(csmoddir)" || list=; \
-	for p in $$list; do \
-	  $(am__strip_dir) \
-	  echo " $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f '$(DESTDIR)$(csmoddir)/$$f'"; \
-	  $(LIBTOOL) $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=uninstall rm -f "$(DESTDIR)$(csmoddir)/$$f"; \
-	done
 
 clean-csmodLTLIBRARIES:
 	-test -z "$(csmod_LTLIBRARIES)" || rm -f $(csmod_LTLIBRARIES)
@@ -1496,6 +1488,12 @@ install-csmodLTLIBRARIES:
 		echo    "Please restart asterisk or reload the module to use the new version of chan_sccp.so"; 				\
 		echo    "==============================================================================================="; 		\
 	fi
+
+uninstall-csmodLTLIBRARIES:
+	@$(NORMAL_UNINSTALL)
+	@echo "Removing $(DESTDIR)$(csmoddir)/chan_sccp.so..."
+	@rm -f "$(DESTDIR)$(csmoddir)/chan_sccp.so"
+	@rm -f "$(DESTDIR)$(PBX_DEBUGMODDIR)/chan_sccp.so"
 
 install-data-local:
 	@test -d $(DESTDIR)$(PBX_ETC) || $(mkinstalldirs) $(DESTDIR)$(PBX_ETC);								\
