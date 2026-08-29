@@ -2505,6 +2505,7 @@ static boolean_t sccp_astwrap_createRtpInstance(constDevicePtr d, constChannelPt
 		ast_channel_set_fd(c->owner, fd_offset, ast_rtp_instance_fd(instance, 0));		// RTP
 		ast_channel_set_fd(c->owner, fd_offset + 1, ast_rtp_instance_fd(instance, 1));		// RTCP
 	}
+
 	ast_rtp_instance_set_prop(instance, AST_RTP_PROPERTY_RTCP, 1);
 	if (rtp->type == SCCP_RTP_AUDIO) {
 		ast_rtp_instance_set_prop(instance, AST_RTP_PROPERTY_DTMF, 1);
@@ -2525,6 +2526,38 @@ static boolean_t sccp_astwrap_createRtpInstance(constDevicePtr d, constChannelPt
 			ast_rtp_codecs_payloads_unset(ast_rtp_instance_get_codecs(instance), instance, 101);
  		}
 		ast_rtp_codecs_payload_replace_format(ast_rtp_instance_get_codecs(instance), 25, ast_format_slin16);				// replace slin16 RTPPayloadType=25 (wideband-256)
+#if ASTERISK_VERSION_GROUP >= 120
+		/* Asterisk 20 dropped the static_RTP_PT[] fallback for the tx-direction
+		 * payload lookup (see ast_rtp_codecs_payload_code_tx_sample_rate in
+		 * main/rtp_engine.c — it now only iterates codecs->payload_mapping_tx).
+		 * Without explicit registration for the standard audio payload types,
+		 * res_rtp_asterisk emits "Don't know how to send format alaw packets"
+		 * the first time it tries to write outbound audio. Seeding the table
+		 * with the well-known payloads keeps inbound calls audible. */
+		{
+			static const struct { int payload; const char *mime; } sccp_audio_static_payloads[] = {
+				{ 0,  "PCMU" },  // ulaw
+				{ 3,  "GSM"  },
+				{ 4,  "G723" },
+				{ 8,  "PCMA" },  // alaw
+				{ 9,  "G722" },
+				{ 13, "CN"   },  // comfort noise
+				{ 18, "G729" },
+			};
+			size_t i;
+			for (i = 0; i < ARRAY_LEN(sccp_audio_static_payloads); i++) {
+				ast_rtp_codecs_payloads_set_m_type(ast_rtp_instance_get_codecs(instance), instance, sccp_audio_static_payloads[i].payload);
+				/* Roll the registration back when the mime type is not known to this
+				 * asterisk version, the same way the CISCO-DTMF registration above
+				 * does - otherwise the payload stays in the table without a matching
+				 * rtpmap entry. */
+				if (ast_rtp_codecs_payloads_set_rtpmap_type(ast_rtp_instance_get_codecs(instance), instance, sccp_audio_static_payloads[i].payload,
+					rtp_map_filter, sccp_audio_static_payloads[i].mime, (enum ast_rtp_options)0)) {
+					ast_rtp_codecs_payloads_unset(ast_rtp_instance_get_codecs(instance), instance, sccp_audio_static_payloads[i].payload);
+				}
+			}
+		}
+#endif
 	}
 
 	ast_rtp_codecs_set_framing(ast_rtp_instance_get_codecs(instance), ast_format_cap_get_framing(ast_channel_nativeformats(c->owner)));
