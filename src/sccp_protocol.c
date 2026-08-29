@@ -79,6 +79,23 @@ static void sccp_protocol_sendCallInfoV3 (const sccp_callinfo_t * const ci, cons
 		SCCP_CALLINFO_PRESENTATION, &presentation,
 		SCCP_CALLINFO_KEY_SENTINEL);
 
+	// Getter() above wrote raw UTF-8 straight into these fixed-size buffers;
+	// convert in-place to the device's configured phonecodepage (iconvcodepage)
+	// before the packet goes out - device->copyStr2Locale() reads src fully
+	// into its own temp buffer before writing dst, so src==dst is safe here.
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.calledPartyName, msg->data.CallInfoMessage.calledPartyName, sizeof(msg->data.CallInfoMessage.calledPartyName));
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.calledParty, msg->data.CallInfoMessage.calledParty, sizeof(msg->data.CallInfoMessage.calledParty));
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.cdpnVoiceMailbox, msg->data.CallInfoMessage.cdpnVoiceMailbox, sizeof(msg->data.CallInfoMessage.cdpnVoiceMailbox));
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.callingPartyName, msg->data.CallInfoMessage.callingPartyName, sizeof(msg->data.CallInfoMessage.callingPartyName));
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.callingParty, msg->data.CallInfoMessage.callingParty, sizeof(msg->data.CallInfoMessage.callingParty));
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.cgpnVoiceMailbox, msg->data.CallInfoMessage.cgpnVoiceMailbox, sizeof(msg->data.CallInfoMessage.cgpnVoiceMailbox));
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.originalCalledPartyName, msg->data.CallInfoMessage.originalCalledPartyName, sizeof(msg->data.CallInfoMessage.originalCalledPartyName));
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.originalCalledParty, msg->data.CallInfoMessage.originalCalledParty, sizeof(msg->data.CallInfoMessage.originalCalledParty));
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.originalCdpnVoiceMailbox, msg->data.CallInfoMessage.originalCdpnVoiceMailbox, sizeof(msg->data.CallInfoMessage.originalCdpnVoiceMailbox));
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.lastRedirectingPartyName, msg->data.CallInfoMessage.lastRedirectingPartyName, sizeof(msg->data.CallInfoMessage.lastRedirectingPartyName));
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.lastRedirectingParty, msg->data.CallInfoMessage.lastRedirectingParty, sizeof(msg->data.CallInfoMessage.lastRedirectingParty));
+	device->copyStr2Locale(device, msg->data.CallInfoMessage.lastRedirectingVoiceMailbox, msg->data.CallInfoMessage.lastRedirectingVoiceMailbox, sizeof(msg->data.CallInfoMessage.lastRedirectingVoiceMailbox));
+
 	// 7920's exception. They don't seem to reverse the interpretation of the presentation flag
 	// if (device->skinny_type == SKINNY_DEVICETYPE_CISCO7920) {
 	//	msg->data.CallInfoMessage.partyPIRestrictionBits = presentation ? 0x0 : 0xf;
@@ -138,6 +155,9 @@ static void sccp_protocol_sendCallInfoV7 (const sccp_callinfo_t * const ci, cons
 
 
 	for (i = 0; i < dataSize; i++) {
+		// convert in-place to the device's configured phonecodepage before
+		// measuring length - src==dst is safe, see copyStr2Locale() note above
+		device->copyStr2Locale(device, data[i], data[i], sizeof(data[i]));
 		data_len[i] = strlen(data[i]);
 		dummy_len += data_len[i];
 	}
@@ -225,6 +245,9 @@ static void sccp_protocol_sendCallInfoV16 (const sccp_callinfo_t * const ci, con
 		return;
 	}
 	for (field = 0; field < dataSize; field++) {
+		// convert in-place to the device's configured phonecodepage before
+		// measuring length - src==dst is safe, see copyStr2Locale() note above
+		device->copyStr2Locale(device, data[field], data[field], sizeof(data[field]));
 		data_len = strlen(data[field]) + 1; 		//add NULL terminator
 		memcpy(dummy + dummy_len, data[field], data_len);
 		dummy_len += data_len;
