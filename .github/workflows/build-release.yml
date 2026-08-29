@@ -1,0 +1,58 @@
+name: Build release binaries
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-ast23-sng12:
+    name: chan_sccp.so (Asterisk 23 / sng12, Debian 12)
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    steps:
+      - name: Install base build tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            ca-certificates gnupg git build-essential autoconf automake gettext
+
+      - uses: actions/checkout@v4
+
+      - name: Add FreePBX apt repo (source of asterisk23-devel)
+        run: |
+          cp .github/keys/freepbx-repo.gpg /etc/apt/trusted.gpg.d/freepbx.gpg
+          echo "deb [arch=amd64] http://deb.freepbx.org/freepbx17-prod bookworm main" \
+            > /etc/apt/sources.list.d/freepbx.list
+          apt-get update
+
+      - name: Install asterisk23-devel (must match the target Asterisk build exactly)
+        run: DEBIAN_FRONTEND=noninteractive apt-get install -y asterisk23-devel
+
+      - name: Build chan_sccp.so
+        run: |
+          ./tools/bootstrap.sh
+          ./configure --with-asterisk-version=23.0 \
+            --enable-conference --enable-advanced-functions \
+            --enable-distributed-devicestate --enable-video
+          make -j2
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp src/.libs/chan_sccp.so dist/chan_sccp-ast23-sng12.so
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/chan_sccp-ast23-sng12.so --clobber
+
+  # Asterisk 20 / sng7 (CentOS 7) target is NOT built here yet. Unlike the
+  # sng12/apt side above (verified live against a real box, see .github/keys),
+  # nobody has confirmed the actual yum/dnf repo URL + GPG key that ships
+  # asterisk20-devel for sng7 - no sng7 box was available to check against,
+  # and guessing a repo URL for an unsigned/unverified package source is
+  # worse than not building the target at all. Add an sng7 job here once
+  # that's actually confirmed against a real system.

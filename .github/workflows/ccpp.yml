@@ -1,24 +1,123 @@
-name: CI
+name: Build (push)
 
 on: [push]
 
 jobs:
-  build:
-
+  build-ast20-sng7:
+    name: chan_sccp.so (Asterisk 20 / sng7, CentOS 7)
     runs-on: ubuntu-latest
-    
+    container: centos:7
     steps:
-    - uses: actions/checkout@v1
-    - name: Update apt
-      run: sudo apt update
-    - name: Install Dependencies
-      #run: sudo apt install asterisk asterisk-dev asterisk-config asterisk-tests asterisk-testsuite asttest automake autoconf libtool gawk libxml2-dev libxslt1-dev xsltproc libssl-dev 
-      run: sudo apt install asterisk asterisk-dev asterisk-config automake autoconf libtool gawk libxml2-dev libxslt1-dev xsltproc libssl-dev 
-    - name: configure
-      run: ./configure --enable-conference --enable-devdoc --with-hash-size=3001 --enable-experimental-xml --enable-video
-    - name: make
-      run: make -j4
-#    - name: make check
-#      run: make check
-#    - name: make distcheck
-#      run: make distcheck
+      - name: Point yum at Sangoma's own mirrors (stock CentOS 7 repos are EOL/dead)
+        run: |
+          rm -f /etc/yum.repos.d/CentOS-*.repo
+          {
+            echo '[sng-base]'
+            echo 'name=Sangoma-$releasever - Base'
+            echo 'mirrorlist=http://mirrorlist.sangoma.net/?release=$releasever&arch=$basearch&repo=os&dist=$dist&staging=$staging'
+            echo 'gpgcheck=0'
+            echo ''
+            echo '[sng-updates]'
+            echo 'name=Sangoma-$releasever - Updates'
+            echo 'mirrorlist=http://mirrorlist.sangoma.net/?release=$releasever&arch=$basearch&repo=updates&dist=$dist&staging=$staging'
+            echo 'gpgcheck=0'
+            echo ''
+            echo '[sng-extras]'
+            echo 'name=Sangoma-$releasever - Extras'
+            echo 'mirrorlist=http://mirrorlist.sangoma.net/?release=$releasever&arch=$basearch&repo=extras&dist=$dist&staging=$staging'
+            echo 'gpgcheck=0'
+            echo ''
+            echo '[sng-pkgs]'
+            echo 'name=Sangoma-$releasever - Sangoma Open Source Packages'
+            echo 'mirrorlist=http://mirrorlist.sangoma.net/?release=$releasever&arch=$basearch&repo=sng7&dist=$dist&staging=$staging'
+            echo 'gpgcheck=0'
+            echo 'exclude=sangoma-pbx sangoma-release freepbx'
+          } > /etc/yum.repos.d/sangoma.repo
+          # x86_64-only: the base centos:7 image already has its own
+          # glibc-common installed, and pulling in a 32-bit (.i686) glibc
+          # from sng-base as a transitive dependency conflicts with it
+          # (exact build/release number mismatch) - multilib_policy=best
+          # stops yum from ever considering the .i686 variant.
+          echo 'multilib_policy=best' >> /etc/yum.conf
+          yum clean all
+
+      - name: Align glibc with Sangoma's build (base image ships a newer release number than sng-base)
+        # glibc-devel (needed by gcc) requires an exact-match glibc/glibc-common
+        # release from sng-base (2.17-307.el7.1). The centos:7 base image
+        # already has upstream CentOS's glibc-common (2.17-317.el7) installed -
+        # a *higher* release number, so a plain `yum install` won't touch it,
+        # and yum's solver reaches for glibc.i686 instead to satisfy the exact
+        # version match (multilib_policy=best doesn't block this path since
+        # it's not an arch-choice ambiguity). `yum downgrade` moves it to
+        # Sangoma's exact build directly, so nothing later needs the i686 route.
+        run: yum downgrade -y glibc glibc-common
+
+      - name: Install git and build tools
+        # gettext-devel (not just gettext) is what actually provides the
+        # AM_ICONV aclocal macro tools/bootstrap.sh needs - without it,
+        # aclocal silently can't find AM_ICONV, autoconf emits a broken
+        # configure script (AM_ICONV ends up as a literal shell command),
+        # and ICONV_CONST never gets defined, breaking the sccp_device.h
+        # compile. libtool is needed for the same bootstrap step.
+        run: yum install -y gcc make git autoconf automake gettext-devel libtool asterisk20-devel
+
+      - name: Checkout source
+        # actions/checkout@v4 needs a Node 20+ runtime, which requires glibc
+        # 2.28+ - CentOS 7 ships glibc 2.17, so the action itself can't run
+        # in this container (confirmed: it fails before any build step
+        # runs). Plain git clone has no such requirement.
+        run: |
+          git clone "https://github.com/${GITHUB_REPOSITORY}.git" .
+          git checkout "${GITHUB_SHA}"
+
+      - name: Build chan_sccp.so
+        run: |
+          ./tools/bootstrap.sh
+          ./configure --with-asterisk-version=20.0 \
+            --enable-conference --enable-advanced-functions \
+            --enable-distributed-devicestate --enable-video
+          make -j2
+
+      - name: Confirm build output
+        # actions/upload-artifact@v4 has the same Node 20+/glibc problem as
+        # actions/checkout@v4 above - skip it here, just prove the .so
+        # exists. build-release.yml is the one that actually publishes
+        # binaries, and it runs on Debian 12 (glibc is new enough there).
+        run: ls -la src/.libs/chan_sccp.so
+
+  build-ast23-sng12:
+    name: chan_sccp.so (Asterisk 23 / sng12, Debian 12)
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    steps:
+      - name: Install base build tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            ca-certificates gnupg git build-essential autoconf automake gettext
+
+      - uses: actions/checkout@v4
+
+      - name: Add FreePBX apt repo (source of asterisk23-devel)
+        run: |
+          cp .github/keys/freepbx-repo.gpg /etc/apt/trusted.gpg.d/freepbx.gpg
+          echo "deb [arch=amd64] http://deb.freepbx.org/freepbx17-prod bookworm main" \
+            > /etc/apt/sources.list.d/freepbx.list
+          apt-get update
+
+      - name: Install asterisk23-devel (must match the target Asterisk build exactly)
+        run: DEBIAN_FRONTEND=noninteractive apt-get install -y asterisk23-devel
+
+      - name: Build chan_sccp.so
+        run: |
+          ./tools/bootstrap.sh
+          ./configure --with-asterisk-version=23.0 \
+            --enable-conference --enable-advanced-functions \
+            --enable-distributed-devicestate --enable-video
+          make -j2
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chan_sccp-ast23-sng12
+          path: src/.libs/chan_sccp.so
