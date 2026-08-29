@@ -7,7 +7,7 @@ AC_PREREQ([2.64])
 AC_INIT([Chan_SCCP],m4_esyscmd([cat .version |tr -d '\n']),[https://github.com/chan-sccp/chan-sccp/issues],[Chan_SCCP])
 
 MIN_ASTERISK_VERSION=106
-MAX_ASTERISK_VERSION=113
+MAX_ASTERISK_VERSION=123
 
 AC_CONFIG_AUX_DIR([autoconf])
 
@@ -119,7 +119,12 @@ AC_CONFIG_COMMANDS([.revision],
 AC_CONFIG_COMMANDS([src/sccp_enum.h],
 	output=`cd ${ac_abs_top_builddir}/src/;awk -f "${ac_abs_top_srcdir}/tools/gen_sccp_enum.awk" < ${ac_abs_top_srcdir}/src/sccp_enum.in &>/dev/null`
 )
-AC_CONFIG_FILES([Makefile doc/Makefile src/Makefile src/pbx_impl/Makefile src/pbx_impl/ast/Makefile src/pbx_impl/ast_announce/Makefile src/pbx_impl/ast${ASTERISK_VER_GROUP}/Makefile contrib/gen_sccpconf/Makefile])
+dnl Every directory listed in src/Makefile.am's DIST_SUBDIRS needs a generated
+dnl Makefile, otherwise `make dist` stops at the first inactive version group
+dnl with "No rule to make target 'distdir'". Only the group matching the
+dnl detected asterisk version is ever built (see SUBDIRS there); the rest are
+dnl configured purely so they can be distributed.
+AC_CONFIG_FILES([Makefile doc/Makefile src/Makefile src/pbx_impl/Makefile src/pbx_impl/ast/Makefile src/pbx_impl/ast_announce/Makefile src/pbx_impl/ast106/Makefile src/pbx_impl/ast108/Makefile src/pbx_impl/ast110/Makefile src/pbx_impl/ast111/Makefile src/pbx_impl/ast112/Makefile src/pbx_impl/ast113/Makefile src/pbx_impl/ast114/Makefile src/pbx_impl/ast115/Makefile src/pbx_impl/ast116/Makefile src/pbx_impl/ast117/Makefile src/pbx_impl/ast118/Makefile src/pbx_impl/ast119/Makefile src/pbx_impl/ast120/Makefile src/pbx_impl/ast121/Makefile src/pbx_impl/ast122/Makefile src/pbx_impl/ast123/Makefile contrib/gen_sccpconf/Makefile])
 AST_SET_PBX_AMCONDITIONALS
 
 VERSION="`echo ${SCCP_VERSION}_${SCCP_BRANCH}`"
