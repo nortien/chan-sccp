@@ -184,6 +184,7 @@ static struct sccp_refcount_obj_info {
 	[SCCP_REF_LINEDEVICE] = { NULL, "ld", DEBUGCAT_LINE },
 	[SCCP_REF_LINE] = { NULL, "line", DEBUGCAT_LINE },
 	[SCCP_REF_DEVICE] = { NULL, "device", DEBUGCAT_DEVICE },
+	[SCCP_REF_SESSION] = { NULL, "session", DEBUGCAT_SOCKET },
 #if CS_TEST_FRAMEWORK
 	[SCCP_REF_TEST] = { NULL, "test", DEBUGCAT_HIGH },
 #endif

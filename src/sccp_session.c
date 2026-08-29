@@ -40,6 +40,7 @@ SCCP_FILE_VERSION(__FILE__, "");
 #endif
 #include <asterisk/cli.h>
 #include <signal.h>
+#include <semaphore.h>
 
 /* global variables -> GLOBALS */
 // static pthread_t accept_tid;
@@ -63,6 +64,7 @@ void sccp_session_device_thread_exit(void *session);
 void *sccp_session_device_thread(void *session);
 void __sccp_session_stopthread(sessionPtr session, skinny_registrationstate_t newRegistrationState);
 gcc_inline void recalc_wait_time(sccp_session_t *s);
+int __sccp_session_destroy(const void *ptr);
 static struct ast_sockaddr internip;
 
 struct sccp_servercontext {
@@ -165,6 +167,10 @@ struct sccp_session {
 	char designator[40];
 	uint16_t requestsInFlight;
 	pbx_cond_t pendingRequest;
+	sem_t thread_finished;											/*!< Posted by the session thread's own exit handler once its
+														     cleanup (device release, socket close) has actually run - lets
+														     __sccp_netsock_end_device_thread() wait for that without
+														     pthread_join(), which is unusable once the thread is detached. */
 };														/*!< SCCP Session Structure */
 
 int sccp_session_getFD(sccp_session_t * s)
@@ -625,7 +631,17 @@ void sccp_session_releaseDevice(constSessionPtr volatile session)
  *      - sessions
  *      - device
  */
-static void destroy_session(sccp_session_t * s)
+/*
+ * Real teardown work (device release, socket close, removal from the
+ * global sessions list) - deliberately NOT inside __sccp_session_destroy()
+ * below. It has to run synchronously as part of the thread's own exit,
+ * before that thread drops its reference - not whenever the refcount
+ * happens to reach zero, which can be later than that if
+ * __sccp_netsock_end_device_thread() is concurrently holding its own
+ * retained reference while it waits. See thread_finished's doc comment
+ * on the struct for why.
+ */
+static void sccp_session_cleanup(sccp_session_t * s)
 {
 	if (!s) {
 		return;
@@ -644,27 +660,41 @@ static void destroy_session(sccp_session_t * s)
 	if (!sccp_session_removeFromGlobals(s)) {
 		sccp_log((DEBUGCAT_SOCKET)) (VERBOSE_PREFIX_3 "%s: Session could not be found in GLOB(session) %s\n", DEV_ID_LOG(s->device), addrStr);
 	}
-	
-	if (s) {
-		sccp_log((DEBUGCAT_SOCKET)) (VERBOSE_PREFIX_3 "SCCP: Destroy Session %s\n", addrStr);
-		/* closing fd's */
-		sccp_session_lock(s);
-		if(s->sc.fd > 0) {
-			sccp_log((DEBUGCAT_SOCKET))(VERBOSE_PREFIX_3 "SCCP: Shutdown socket %d\n", s->sc.fd);
-			s->srvcontext->transport->shutdown(&s->sc, SHUT_RDWR);
-			sccp_log((DEBUGCAT_SOCKET))(VERBOSE_PREFIX_3 "SCCP: Closing socket %d\n", s->sc.fd);
-			s->srvcontext->transport->close_socket(&s->sc);
-			s->sc.fd = -1;
-		}
-		sccp_session_unlock(s);
 
-		/* destroying mutex and cleaning the session */
-		sccp_mutex_destroy(&s->lock);
-		sccp_mutex_destroy(&s->write_lock);
-		pbx_cond_destroy(&s->pendingRequest);
-		sccp_free(s);
-		s = NULL;
+	sccp_log((DEBUGCAT_SOCKET)) (VERBOSE_PREFIX_3 "SCCP: Destroy Session %s\n", addrStr);
+	/* closing fd's */
+	sccp_session_lock(s);
+	if(s->sc.fd > 0) {
+		sccp_log((DEBUGCAT_SOCKET))(VERBOSE_PREFIX_3 "SCCP: Shutdown socket %d\n", s->sc.fd);
+		s->srvcontext->transport->shutdown(&s->sc, SHUT_RDWR);
+		sccp_log((DEBUGCAT_SOCKET))(VERBOSE_PREFIX_3 "SCCP: Closing socket %d\n", s->sc.fd);
+		s->srvcontext->transport->close_socket(&s->sc);
+		s->sc.fd = -1;
 	}
+	sccp_session_unlock(s);
+
+	/* destroying mutex and cleaning the session */
+	sccp_mutex_destroy(&s->lock);
+	sccp_mutex_destroy(&s->write_lock);
+	pbx_cond_destroy(&s->pendingRequest);
+}
+
+/*
+ * Refcount destructor - runs once every reference (the thread's own,
+ * plus any transient one __sccp_netsock_end_device_thread() is holding
+ * while it waits) has been released. By the time this runs,
+ * sccp_session_cleanup() above has already done the real work; this
+ * only tears down what's safe to defer until the object is genuinely
+ * unreferenced.
+ */
+int __sccp_session_destroy(const void *ptr)
+{
+	sccp_session_t * s = (sccp_session_t *) ptr;
+	if (!s) {
+		return -1;
+	}
+	sem_destroy(&s->thread_finished);
+	return 0;
 }
 
 /*!
@@ -685,13 +715,19 @@ void sccp_session_device_thread_exit(void *session)
 	sccp_log((DEBUGCAT_SOCKET)) (VERBOSE_PREFIX_3 "%s: cleanup session\n", DEV_ID_LOG(s->device));
 	sccp_session_lock(s);
 	s->session_stop = TRUE;
-	/*	if (s->sc.fd > 0) {
-			s->srvcontext->transport->close_socket(&s->sc);
-			s->sc.fd = -1;
-		}*/
-	sccp_session_unlock(s);
+	/* Clear the thread id under the session lock, in the same critical section
+	 * __sccp_netsock_end_device_thread() uses to take it: whoever gets there
+	 * first owns the id, so the two sides can no longer both act on it. */
 	s->session_thread = AST_PTHREADT_NULL;
-	destroy_session(s);
+	sccp_session_unlock(s);
+
+	sccp_session_cleanup(s);
+	/* Signal after cleanup, before releasing our own reference - a
+	 * cross-thread waiter may be blocked in sem_wait() on this exact
+	 * struct right now, so post while it's still guaranteed alive
+	 * (our own reference hasn't been dropped yet). */
+	sem_post(&s->thread_finished);
+	sccp_session_release(&s);
 }
 
 gcc_inline void recalc_wait_time(sccp_session_t *s)
@@ -861,23 +897,55 @@ void __sccp_session_stopthread(sessionPtr s, skinny_registrationstate_t newRegis
 /* cleanup session device thread from another thread */
 static void __sccp_netsock_end_device_thread(sccp_session_t *session)
 {
-	pthread_t session_thread = session->session_thread;
-	if (session_thread == AST_PTHREADT_NULL) {
+	if (session->session_thread == AST_PTHREADT_NULL) {
 		return;
 	}
 
+	/* Retain our own reference before signaling anything - the session
+	 * thread is created detached (see accept_thread()), so its own exit
+	 * handler frees resources via refcount release, not pthread_join().
+	 * Holding a reference here guarantees the struct (and the semaphore
+	 * inside it we're about to wait on) stays alive for as long as we
+	 * need it, regardless of how the other thread's own release races
+	 * against our wait. */
+	AUTO_RELEASE(sccp_session_t, s, sccp_session_retain(session));
+	if (!s) {
+		return;
+	}
+
+	/* Take the thread id out under the session lock rather than reading it and
+	 * cancelling later. The thread is detached, so its id stops being valid the
+	 * moment it terminates and the implementation may hand the same id to a new
+	 * thread; two sides reading the same id could then cancel an unrelated one.
+	 * sccp_session_device_thread_exit() clears the same field under the same
+	 * lock, so exactly one of the two ends up holding a non-null id here. */
+	sccp_session_lock(s);
+	pthread_t session_thread = s->session_thread;
+	s->session_thread = AST_PTHREADT_NULL;
+	sccp_session_unlock(s);
+
+	if (session_thread == AST_PTHREADT_NULL) {
+		return;                                                          /* the thread is already on its way out */
+	}
+
 	/* send thread cancellation (will interrupt poll if necessary) */
-	int s = pthread_cancel(session_thread);
-	if (s != 0) {
+	int cancel_res = pthread_cancel(session_thread);
+	if (cancel_res != 0) {
 		pbx_log(LOG_NOTICE, "SCCP: (sccp_netsock_end_device_thread) pthread_cancel error\n");
 	}
 
-	/* join previous session thread, wait for device cleanup */
-	void * res = NULL;
-	if (pthread_join(session_thread, &res) == 0) {
-		if (res != PTHREAD_CANCELED) {
-			pbx_log(LOG_ERROR, "SCCP: (sccp_netsock_end_device_thread) pthread join failed\n");
-		}
+	/* Wait for the thread's own exit handler to actually finish its
+	 * cleanup (device release, socket close) - not just for the thread
+	 * to be scheduled for cancellation. Detached threads can't be
+	 * pthread_join()'d (that's undefined behaviour), so this semaphore
+	 * is what replaces the wait the old joinable-thread design got for
+	 * free. Bounded wait, not indefinite: if something has gone wrong
+	 * (thread wedged instead of exiting), don't hang the caller forever. */
+	struct timespec timeout;
+	clock_gettime(CLOCK_REALTIME, &timeout);
+	timeout.tv_sec += 5;
+	if (sem_timedwait(&s->thread_finished, &timeout) != 0) {
+		pbx_log(LOG_WARNING, "SCCP: (sccp_netsock_end_device_thread) timed out waiting for session thread to finish cleanup\n");
 	}
 }
 
@@ -918,7 +986,7 @@ static sccp_session_t * sccp_create_session(sccp_servercontext_t * context, sccp
 {
 	sccp_session_t * s = NULL;
 
-	if (!(s = (sccp_session_t *)sccp_calloc(sizeof *s, 1))) {
+	if (!(s = (sccp_session_t *) sccp_refcount_object_alloc(sizeof *s, SCCP_REF_SESSION, "", __sccp_session_destroy))) {
 		pbx_log(LOG_ERROR, SS_Memory_Allocation_Error, "SCCP");
 		return NULL;
 	}
@@ -926,6 +994,7 @@ static sccp_session_t * sccp_create_session(sccp_servercontext_t * context, sccp
 	sccp_mutex_init(&s->lock);
 	pbx_cond_init(&s->pendingRequest, NULL);
 	sccp_mutex_init(&s->write_lock);
+	sem_init(&s->thread_finished, 0, 0);
 
 	s->sc.fd = sc->fd;
 	s->sc.ssl = sc->ssl;
@@ -1010,8 +1079,11 @@ static void * accept_thread(void * data)
 		sccp_session_addToGlobals(s);
 		recalc_wait_time(s);
 		
-		if (pbx_pthread_create(&s->session_thread, NULL, sccp_session_device_thread, s)) {
-			destroy_session(s);
+		if (pbx_pthread_create_detached(&s->session_thread, NULL, sccp_session_device_thread, s)) {
+			/* Thread never started - no exit handler will ever run for
+			 * this session, so do its cleanup here directly. */
+			sccp_session_cleanup(s);
+			sccp_session_release(&s);
 		}
 	}
 	context->transport->close_socket(&new_sc);

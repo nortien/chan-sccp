@@ -14,6 +14,9 @@
 //#include "sccp_protocol.h"
 struct sccp_session;
 
+#define sccp_session_retain(_x)		sccp_refcount_retain_type(sccp_session_t, _x)
+#define sccp_session_release(_x)		sccp_refcount_release_type(sccp_session_t, _x)
+
 __BEGIN_C_EXTERN__
 typedef struct sccp_servercontext sccp_servercontext_t;
 typedef enum {

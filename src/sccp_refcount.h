@@ -22,6 +22,7 @@ enum sccp_refcounted_types {
 	SCCP_REF_LINEDEVICE,
 	SCCP_REF_LINE,
 	SCCP_REF_DEVICE,
+	SCCP_REF_SESSION,
 #if CS_TEST_FRAMEWORK
 	SCCP_REF_TEST,
 #endif
