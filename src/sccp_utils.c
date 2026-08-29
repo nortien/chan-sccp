@@ -1114,15 +1114,32 @@ struct sccp_ha *sccp_append_ha(const char *sense, const char *stuff, struct sccp
 		ret = ha;
 	}
 
-	sccp_log (DEBUGCAT_HIGH) (VERBOSE_PREFIX_2 "%s/%s sense %d appended to acl for peer\n", sccp_netsock_stringify_addr (&ha->netaddr), sccp_netsock_stringify_addr (&ha->netmask), ha->sense);
+	/* sccp_netsock_stringify_addr() returns a pointer into a shared
+	 * thread-local buffer - calling it twice as separate arguments to the
+	 * same format call aliases them both to whichever call ran last.
+	 * Copy each result out first (same pattern as sccp_rtp_print()). */
+	char *appended_addr = pbx_strdupa(sccp_netsock_stringify_addr(&ha->netaddr));
+	char *appended_mask = pbx_strdupa(sccp_netsock_stringify_addr(&ha->netmask));
+	sccp_log (DEBUGCAT_HIGH) (VERBOSE_PREFIX_2 "%s/%s sense %d appended to acl for peer\n", appended_addr, appended_mask, ha->sense);
 
 	return ret;
 }
 
 void sccp_print_ha(struct ast_str *buf, int buflen, struct sccp_ha *path)
 {
+	/* sccp_netsock_stringify_addr() returns a pointer into a shared thread-local
+	 * buffer - calling it twice as separate arguments to the same format call
+	 * aliases them both to whichever call ran last, so each result has to be
+	 * copied out first. Fixed buffers declared once outside the loop, not
+	 * pbx_strdupa(): alloca() is only released when the function returns, so
+	 * copying per iteration would grow the stack with the length of the ACL. */
+	char netaddr_str[INET6_ADDRSTRLEN];
+	char netmask_str[INET6_ADDRSTRLEN];
+
 	while (path) {
-		pbx_str_append (&buf, buflen, "%s:%s/%s,", AST_SENSE_DENY == path->sense ? "deny" : "permit", sccp_netsock_stringify_addr (&path->netaddr), sccp_netsock_stringify_addr (&path->netmask));
+		sccp_copy_string(netaddr_str, sccp_netsock_stringify_addr(&path->netaddr), sizeof(netaddr_str));
+		sccp_copy_string(netmask_str, sccp_netsock_stringify_addr(&path->netmask), sizeof(netmask_str));
+		pbx_str_append (&buf, buflen, "%s:%s/%s,", AST_SENSE_DENY == path->sense ? "deny" : "permit", netaddr_str, netmask_str);
 		path = path->next;
 	}
 }

@@ -703,6 +703,14 @@ static sccp_configurationchange_t sccp_config_object_setValue(void * const obj, 
 			switch (sccpConfigOption->size) {
 				case 1:
 					if ((!strncmp("0x", tmp_value, 2) && sscanf(tmp_value, "%hx", &uint8num)) || (sscanf(tmp_value, "%hu", &uint8num) == 1)) {
+						/* The scanned value is wider than the destination, so it has to be
+						 * range-checked: assigning it straight through would wrap silently
+						 * and store a number the administrator never wrote. */
+						if (uint8num > 255) {
+							pbx_log(LOG_NOTICE, "SCCP: Invalid value '%s' for [%s]->%s. Allowed: [0-255]\n", value, sccpConfigSegment->name, name);
+							changed = SCCP_CONFIG_CHANGE_INVALIDVALUE;
+							break;
+						}
 						if ((*(uint8_t *)dst) != uint8num) {
 							*(uint8_t *)dst = uint8num;
 							changed         = SCCP_CONFIG_CHANGE_CHANGED;
@@ -711,6 +719,14 @@ static sccp_configurationchange_t sccp_config_object_setValue(void * const obj, 
 					break;
 				case 2:
 					if ((!strncmp("0x", tmp_value, 2) && sscanf(tmp_value, "%ux", &uint16num)) || (sscanf(tmp_value, "%u", &uint16num) == 1)) {
+						/* Same reason as above. This is what let `port = 99999` end up as
+						 * 34463 - a port nobody asked for, reported back by the cli as if
+						 * it had been configured. */
+						if (uint16num > 65535) {
+							pbx_log(LOG_NOTICE, "SCCP: Invalid value '%s' for [%s]->%s. Allowed: [0-65535]\n", value, sccpConfigSegment->name, name);
+							changed = SCCP_CONFIG_CHANGE_INVALIDVALUE;
+							break;
+						}
 						if ((*(uint16_t *)dst) != uint16num) {
 							*(uint16_t *)dst = uint16num;
 							changed          = SCCP_CONFIG_CHANGE_CHANGED;
@@ -1678,7 +1694,10 @@ sccp_value_changed_t sccp_config_parse_deny_permit(void * const dest, const size
 				errors |= error;
 				ha = sccp_append_ha("permit", "10.0.0.0/255.0.0.0", ha, &error);
 				errors |= error;
-				ha = sccp_append_ha("permit", "172.16.0.0/255.224.0.0", ha, &error);
+				/* RFC 1918 reserves 172.16.0.0/12, which is mask 255.240.0.0.
+				 * 255.224.0.0 is a /11 and resolves to 172.0.0.0-172.31.255.255,
+				 * permitting the public range 172.0.0.0-172.15.255.255 as well. */
+				ha = sccp_append_ha("permit", "172.16.0.0/255.240.0.0", ha, &error);
 				errors |= error;
 				ha = sccp_append_ha("permit", "192.168.0.0/255.255.0.0", ha, &error);
 			} else {
@@ -3038,10 +3057,12 @@ sccp_config_file_status_t sccp_config_getConfig(boolean_t force, const char * co
 	sccp_log(DEBUGCAT_CORE)(VERBOSE_PREFIX_3 "Config file '%s' loaded.\n", newfilename);
 	res = CONFIG_STATUS_FILE_OK;
 FUNC_EXIT:
-	if (GLOB(config_file_name)) {
-		sccp_free(GLOB(config_file_name));
+	if (newfilename != GLOB(config_file_name)) {
+		if (GLOB(config_file_name)) {
+			sccp_free(GLOB(config_file_name));
+		}
+		GLOB(config_file_name) = pbx_strdup(newfilename);
 	}
-	GLOB(config_file_name) = pbx_strdup(newfilename);
 	return res;
 }
 
