@@ -197,9 +197,12 @@ void *sccp_create_hotline(void)
 
 	AUTO_RELEASE(sccp_line_t, hotline , sccp_line_create("Hotline"));
 	if (hotline) {
-#ifdef CS_SCCP_REALTIME
-		hotline->realtime = TRUE;
-#endif
+		/* The hotline is a static global singleton, not a realtime/DB-backed line.
+		 * It must NOT be marked realtime: the realtime auto-cleaner in
+		 * sccp_linedevice_remove() destroys realtime lines once their last device
+		 * detaches, which tore down this global line (leaking the device) every time
+		 * the last anonymous device disconnected. Every other realtime code path
+		 * already special-cases the hotline (e.g. sccp_config.c line/realtime guard). */
 		hotline->label = pbx_strdup("Hotline");
 		hotline->context = pbx_strdup("default");
 		sccp_copy_string(hotline->cid_name, "hotline", sizeof(hotline->cid_name));
@@ -400,14 +403,14 @@ void sccp_line_updatePreferencesFromDevicesToLine(sccp_line_t * l)
 					// zero matching codecs we have to combine
 					sccp_codec_combineSets(l->preferences.audio, ld->device->preferences.audio);
 				} else {
-					memcpy(&l->preferences.audio, &temp, sizeof *temp);
+					memcpy(&l->preferences.audio, &temp, sizeof(temp));
 				}
-				memset(&temp, SKINNY_CODEC_NONE, sizeof *temp);
+				memset(&temp, SKINNY_CODEC_NONE, sizeof(temp));
 				if(sccp_codec_getReducedSet(l->preferences.video, ld->device->preferences.video, temp) == 0) {
 					// zero matching codecs we have to combine
 					sccp_codec_combineSets(l->preferences.video, ld->device->preferences.video);
 				} else {
-					memcpy(&l->preferences.video, &temp, sizeof *temp);
+					memcpy(&l->preferences.video, &temp, sizeof(temp));
 				}
 			}
 		}

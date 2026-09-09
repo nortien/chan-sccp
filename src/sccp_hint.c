@@ -1128,7 +1128,7 @@ static void sccp_hint_notifySubscribers(sccp_hint_list_t * hint)
 			sccp_log((DEBUGCAT_HINT)) (VERBOSE_PREFIX_4 "%s (hint_notifySubscribers) notify subscriber %s of %s's state %s (%d), devicetype:%s\n", DEV_ID_LOG(d), d->id, hint->hint_dialplan, sccp_channelstate2str(hint->currentState), hint->currentState, skinny_devicetype2str(subscriber->devicetype));
 #ifdef CS_DYNAMIC_SPEEDDIAL
 			sccp_msg_t *msg = NULL;
-			sccp_speed_t k;
+			sccp_speed_t k = {0};
 			char displayMessage[80] = "";
 			skinny_busylampfield_state_t status = SKINNY_BLF_STATUS_UNKNOWN;
 			if (d->inuseprotocolversion >= 15) {

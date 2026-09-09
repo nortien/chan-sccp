@@ -153,6 +153,11 @@ void sccp_linedevice_cfwd(lineDevicePtr ld, sccp_cfwd_t type, char * number)
 		return;
 	}
 
+	if(type >= SCCP_CFWD_SENTINEL) {							/* reject unparsed/out-of-range type before it indexes cfwd[] */
+		pbx_log(LOG_WARNING, "%s: Ignoring call forward with invalid type %d\n", DEV_ID_LOG(ld->device), type);
+		return;
+	}
+
 	if(type == SCCP_CFWD_NONE) {
 		for(uint x = SCCP_CFWD_ALL; x < SCCP_CFWD_SENTINEL; x++) {
 			ld->cfwd[x].enabled = FALSE;

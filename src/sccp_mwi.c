@@ -303,10 +303,13 @@ static void removeSubscription(sccp_mailbox_t * mailbox, constLinePtr line)
 static void removeAllSubscriptions(void)
 {
 	sccp_log((DEBUGCAT_MWI)) (VERBOSE_PREFIX_2 "SCCP: (mwi::removeAllSubscriptions)\n");
-	for (uint32_t idx = 0; idx < SCCP_VECTOR_SIZE(&subscriptions); idx++) {
-		mwi_subscription_t *subscription = SCCP_VECTOR_GET(&subscriptions, idx);
+	/* Always drain index 0: SCCP_VECTOR_REMOVE_UNORDERED() moves the last element
+	 * into the removed slot, so advancing the index would skip that moved element
+	 * and leak its subscription. Keep removing the front until the vector is empty. */
+	while (SCCP_VECTOR_SIZE(&subscriptions) > 0) {
+		mwi_subscription_t *subscription = SCCP_VECTOR_GET(&subscriptions, 0);
+		SCCP_VECTOR_REMOVE_UNORDERED(&subscriptions, 0);
 		if (subscription) {
-			SCCP_VECTOR_REMOVE_UNORDERED(&subscriptions, idx);
 			pbxMailboxUnsubscribe(subscription);
 			sccp_line_release(&subscription->line);
 			sccp_free(subscription);
