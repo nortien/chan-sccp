@@ -192,7 +192,7 @@ static void sccp_sk_redial(const sccp_softkeyMap_cb_t * const softkeyMap_cb, con
 		return;
 	}
 	AUTO_RELEASE(const sccp_line_t, line,
-		     d->redialInformation.lineInstance == 0 ? sccp_line_find_byid(d, d->redialInformation.lineInstance) : sccp_sk_get_retained_line(d, l, lineInstance, c, SKINNY_DISP_NO_LINE_AVAILABLE));
+		     d->redialInformation.lineInstance != 0 ? sccp_line_find_byid(d, d->redialInformation.lineInstance) : sccp_sk_get_retained_line(d, l, lineInstance, c, SKINNY_DISP_NO_LINE_AVAILABLE));
 	if(!line) {
 		line = sccp_sk_get_retained_line(d, l, lineInstance, c, SKINNY_DISP_NO_LINE_AVAILABLE) /*ref_replace*/;
 	}
@@ -210,7 +210,7 @@ static void sccp_sk_redial(const sccp_softkeyMap_cb_t * const softkeyMap_cb, con
 static void sccp_sk_newcall(const sccp_softkeyMap_cb_t * const softkeyMap_cb, constDevicePtr d, constLinePtr l, const uint32_t lineInstance, channelPtr c)
 {
 	char *adhocNumber = NULL;
-	sccp_speed_t k;
+	sccp_speed_t k = {0};
 	AUTO_RELEASE(const sccp_line_t, line , sccp_sk_get_retained_line(d, l, lineInstance, c, SKINNY_DISP_NO_LINE_AVAILABLE));
 	if (!line) {
 		return;
@@ -235,7 +235,7 @@ static void sccp_sk_newcall(const sccp_softkeyMap_cb_t * const softkeyMap_cb, co
 	 */
 	if(!adhocNumber) {
 		AUTO_RELEASE(sccp_channel_t, activeChannel, sccp_device_getActiveChannel(d));
-		if(activeChannel && activeChannel->line != l && sccp_strlen(activeChannel->dialedNumber) == 0) {
+		if(activeChannel && activeChannel->line != line && sccp_strlen(activeChannel->dialedNumber) == 0) {
 			sccp_channel_endcall(activeChannel);
 		}
 	}
@@ -1094,7 +1094,7 @@ void sccp_softkey_clear(void)
 		}
 		if (k->softkeyCbMap) {
 			for (i = 0; i < ARRAY_LEN(softkeyCbMap); i++) {
-				if (!sccp_strlen_zero(k->softkeyCbMap[i].uriactionstr)) {
+				if (k->softkeyCbMap[i].uriactionstr) {
 					sccp_free(k->softkeyCbMap[i].uriactionstr);
 				}
 			}
@@ -1132,6 +1132,9 @@ boolean_t sccp_softkeyMap_replaceCallBackByUriAction(sccp_softkeyMap_cb_t * cons
 	for(uint i = 0; i < ARRAY_LEN(softkeyCbMap); i++) {
 		if (event == softkeyMap[i].event) {
 			softkeyMap[i].softkeyEvent_cb = sccp_sk_uriaction;
+			if (softkeyMap[i].uriactionstr) {
+				sccp_free(softkeyMap[i].uriactionstr);
+			}
 			softkeyMap[i].uriactionstr = pbx_strdup(sccp_trimwhitespace(uriactionstr));
 			return TRUE;
 		}

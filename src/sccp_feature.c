@@ -147,6 +147,21 @@ static int sccp_feat_perform_pickup(constDevicePtr d, channelPtr c, PBX_CHANNEL_
 		iPbx.get_callerid_number(target, &target_number);
 	}
 
+	/* The channel we pick up with carries no calling party of its own: on a directed pickup it is the
+	 * channel the user dialled the pickup code on. Read the caller off the call we are taking over,
+	 * before ast_do_pickup() masquerades it away, so the phone shows who is actually calling instead
+	 * of an empty caller - which it would otherwise keep for the rest of the call, and hand on to
+	 * whoever the call gets transferred to afterwards. */
+	char picked_calling_name[StationMaxNameSize] = { 0 };
+	char picked_calling_number[StationMaxDirnumSize] = { 0 };
+	{
+		AUTO_RELEASE(sccp_channel_t, target_channel, get_sccp_channel_from_pbx_channel(target));
+		if(target_channel) {
+			iCallInfo.Getter(sccp_channel_getCallInfo(target_channel), SCCP_CALLINFO_CALLINGPARTY_NAME, &picked_calling_name, SCCP_CALLINFO_CALLINGPARTY_NUMBER, &picked_calling_number,
+					 SCCP_CALLINFO_KEY_SENTINEL);
+		}
+	}
+
 	sccp_channel_stop_schedule_digittimout(c);
 	c->calltype = SKINNY_CALLTYPE_INBOUND;                                        // reset call direction
 	c->state = SCCP_CHANNELSTATE_RINGING;
@@ -200,6 +215,8 @@ static int sccp_feat_perform_pickup(constDevicePtr d, channelPtr c, PBX_CHANNEL_
 
 		callinfo_orig = sccp_channel_getCallInfo(c);
 		iCallInfo.Setter(callinfo_orig,                                                                      // update calling end
+				 SCCP_CALLINFO_CALLINGPARTY_NAME, sccp_strlen_zero(picked_calling_name) ? NULL : picked_calling_name,                     // who is calling us
+				 SCCP_CALLINFO_CALLINGPARTY_NUMBER, sccp_strlen_zero(picked_calling_number) ? NULL : picked_calling_number,
 				 SCCP_CALLINFO_CALLEDPARTY_NAME, called_name,                                        // channel picking up
 				 SCCP_CALLINFO_CALLEDPARTY_NUMBER, called_number, SCCP_CALLINFO_ORIG_CALLEDPARTY_NAME, target_name, SCCP_CALLINFO_ORIG_CALLEDPARTY_NUMBER, target_number,
 				 SCCP_CALLINFO_ORIG_CALLEDPARTY_REDIRECT_REASON, 5, SCCP_CALLINFO_LAST_REDIRECTINGPARTY_NAME, called_name, SCCP_CALLINFO_LAST_REDIRECTINGPARTY_NUMBER, called_number,
