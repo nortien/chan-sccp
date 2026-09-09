@@ -105,7 +105,7 @@ struct sccp_call_statistics {
 	uint32_t num;
 	uint32_t packets_sent;
 	uint32_t packets_received;
-	uint32_t packets_lost;
+	int32_t packets_lost;                                                                                   /*!< signed: phones report a negative loss when they receive more than expected */
 	uint32_t jitter;
 	uint32_t latency;
 	uint32_t discarded;

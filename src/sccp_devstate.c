@@ -135,7 +135,7 @@ static void parseButtonArgs(const char * args, feature_state_t * states)
 	char * arg = NULL;
 	while((arg = strsep(&_args, "|")) != NULL) {
 		unsigned short int state, rythm, color, icon, nextstate;
-		if(sscanf(arg, "%1hd%1hd%1hd%1hd%1hd", &state, &rythm, &color, &icon, &nextstate) == 5) {
+		if(sscanf(arg, "%1hd%1hd%1hd%1hd%1hd", &state, &rythm, &color, &icon, &nextstate) == 5 && state < AST_DEVICE_TOTAL) {
 			states[state].value.strct.rythm = rythm;
 			states[state].value.strct.color = color;
 			states[state].value.strct.icon = icon;

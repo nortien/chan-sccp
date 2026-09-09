@@ -68,6 +68,8 @@ void sccp_featButton_changed(constDevicePtr device, sccp_feature_type_t featureT
 			sccp_log((DEBUGCAT_FEATURE_BUTTON + DEBUGCAT_FEATURE)) (VERBOSE_PREFIX_3 "%s: (sccp_featButton_changed) FeatureID = %d, Option: %s\n", DEV_ID_LOG(device), config->button.feature.id, (config->button.feature.options) ? config->button.feature.options : "(none)");
 			sccp_copy_string(label_text, config->label, sizeof(label_text));
 			instance = config->instance;
+			lineFound = FALSE;						/* reset per feature button, not shared across the list */
+			buttonID = SKINNY_BUTTONTYPE_FEATURE;
 
 			switch (config->button.feature.id) {
 				case SCCP_FEATURE_PRIVACY:

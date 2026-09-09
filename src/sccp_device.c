@@ -471,15 +471,25 @@ void sccp_device_post_reload(void)
 		if (!d->pendingDelete && !d->pendingUpdate) {
 			continue;
 		}
+		/* check_update() can drop the device's last reference: for a pendingDelete
+		 * device it calls sccp_dev_clean_restart(..., TRUE), which removes the device
+		 * from GLOB(devices), and once check_update()'s own retain is released the
+		 * object is freed. Hold our own reference across the whole body so the codec
+		 * reduction below cannot read freed memory.
+		 */
+		AUTO_RELEASE(sccp_device_t, device, sccp_device_retain(d));
+		if (!device) {
+			continue;
+		}
 		/* Because of the previous check, the only reason that the device hasn't
 		 * been updated will be because it is currently engaged in a call.
 		 */
-		if (!sccp_device_check_update(d)) {
-			sccp_log((DEBUGCAT_CONFIG + DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "Device %s will receive reset after current call is completed\n", d->id);
+		if (!sccp_device_check_update(device)) {
+			sccp_log((DEBUGCAT_CONFIG + DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "Device %s will receive reset after current call is completed\n", device->id);
 		}
 		// make sure preferences only contains the codecs that this device is capable of
-		sccp_codec_reduceSet(d->preferences.audio , d->capabilities.audio);
-		sccp_codec_reduceSet(d->preferences.video , d->capabilities.video);
+		sccp_codec_reduceSet(device->preferences.audio , device->capabilities.audio);
+		sccp_codec_reduceSet(device->preferences.video , device->capabilities.video);
 		/* should we re-check the device after hangup ? */
 	}
 	SCCP_LIST_TRAVERSE_SAFE_END;
@@ -514,7 +524,13 @@ const sccp_accessory_t sccp_device_getActiveAccessory(constDevicePtr d)
 int sccp_device_setAccessoryStatus(constDevicePtr d, const sccp_accessory_t accessory, const sccp_accessorystate_t state)
 {
 	pbx_assert(d != NULL && d->privateData != NULL);
-	pbx_assert(accessory > SCCP_ACCESSORY_NONE && accessory < SCCP_ACCESSORY_SENTINEL && state > SCCP_ACCESSORYSTATE_NONE && state < SCCP_ACCESSORYSTATE_SENTINEL);
+	/* accessory/state arrive from the network; validate at runtime instead of asserting,
+	   otherwise a crafted AccessoryStatus packet either aborts (assert) or indexes
+	   accessoryStatus[] out of bounds (NDEBUG builds). */
+	if (accessory <= SCCP_ACCESSORY_NONE || accessory >= SCCP_ACCESSORY_SENTINEL || state <= SCCP_ACCESSORYSTATE_NONE || state >= SCCP_ACCESSORYSTATE_SENTINEL) {
+		sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: ignoring out-of-range accessory=%d state=%d\n", d->id, accessory, state);
+		return 0;
+	}
 	int changed = 0;
 	
 	sccp_private_lock(d->privateData);
@@ -1448,7 +1464,12 @@ void sccp_dev_set_keyset(constDevicePtr d, uint8_t lineInstance, uint32_t callid
 #if CS_SCCP_CONFERENCE
 						(d->conference) ? KEYMODE_CONNCONF :
 #endif
-						(d->transfer) ? KEYMODE_CONNTRANS : KEYMODE_CONNECTED
+						/* d->transfer only says the feature is allowed, which it is by default - on its
+						 * own it made every connected call show the transfer key set, so the plain
+						 * CONNECTED set (and with it iDivert and ConfList) could never be reached.
+						 * Show the transfer set while a transfer is actually running, the same way the
+						 * 69XX branch above already does. */
+						(d->transfer && d->transferChannels.transferee) ? KEYMODE_CONNTRANS : KEYMODE_CONNECTED
 					  );
 		}
 	}
@@ -2531,7 +2552,11 @@ void _sccp_dev_clean(devicePtr device, boolean_t remove_from_global, boolean_t r
 		if (device->lineButtons.size) {
 			sccp_linedevice_deleteButtonsArray(d);
 		}
-		sccp_session_t *s = d->session;
+		/* d->session is a raw, non-owning pointer (the session's own thread owns its
+		 * lifetime and frees it in sccp_session_device_thread_exit). Retain it for the
+		 * duration of the teardown so that a concurrent disconnect cannot free the
+		 * session out from under releaseDevice()/stopthread() here. */
+		AUTO_RELEASE(sccp_session_t, s, d->session ? sccp_session_retain(d->session) : NULL);
 		if (s) {
 			if (restart_device) {
 				sccp_device_sendReset(d, SKINNY_RESETTYPE_RESTART);
@@ -3230,7 +3255,7 @@ static sccp_push_result_t sccp_device_pushTextMessage(constDevicePtr device, con
 		return SCCP_PUSH_RESULT_FAIL;
 	}
 
-	if ((device->protocolversion < 17 && 1024 > msg_length) || sccp_strlen(messageText) > 4000) {
+	if ((device->protocolversion < 17 && 1024 < msg_length) || sccp_strlen(messageText) > 4000) {
 		sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: (pushTextMessage) messageText is to long.\n", DEV_ID_LOG(device));
 		return SCCP_PUSH_RESULT_FAIL;
 	}
@@ -3238,6 +3263,7 @@ static sccp_push_result_t sccp_device_pushTextMessage(constDevicePtr device, con
 	const char *xmlTitleFormat = "<Title>%s</Title>";
 	size_t title_length = strlen(xmlTitleFormat) + sccp_strlen(from) - 2 /* for the %s */  + 1 /* for terminator */ ;
 	char title[title_length];
+	title[0] = '\0';
 
 	if (!sccp_strlen_zero(from)) {
 		msg_length += title_length;
