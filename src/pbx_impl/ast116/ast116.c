@@ -531,16 +531,20 @@ static void __find_joint_capabilities(sccp_channel_t *c, PBX_CHANNEL_TYPE* peer,
 
 			if (!ast_format_cap_empty(joint)) {
 				best_fmt_native = ast_format_cap_get_best_by_type(joint, media_type);
-				sccp_log(DEBUGCAT_CODEC) (VERBOSE_PREFIX_4 "%s: (find_joint_capabilities) NOT transcoding, best_native:%s\n", c->designator, ast_format_get_codec_name(best_fmt_native));
+				sccp_log(DEBUGCAT_CODEC) (VERBOSE_PREFIX_4 "%s: (find_joint_capabilities) NOT transcoding, best_native:%s\n", c->designator, best_fmt_native ? ast_format_get_codec_name(best_fmt_native) : "<none>");
 				if (best_fmt_native) {
 					ast_format_cap_remove_by_type(caps, media_type);
 					ast_format_cap_append(caps, best_fmt_native, media_type);
 				}
 				ast_format_cap_append_from_cap(caps, joint, media_type);
 			} else {
+				/* Both outputs come back holding a reference of their own: on success this
+				 * function ao2_replaces into each of them, and on failure it leaves both
+				 * untouched at NULL. The extra reference taken here was therefore never
+				 * balanced, since only one release happens at the end of this function, and
+				 * every consumer below takes its own reference anyway. */
 				ast_translator_best_choice(remote_caps, caps, &best_fmt_cap, &best_fmt_native);
 				if (best_fmt_native) {
-					ao2_ref(best_fmt_native, +1);
 					ast_format_cap_remove_by_type(caps, media_type);
 					ast_format_cap_append(caps, best_fmt_cap, media_type);
 				} else {
@@ -548,7 +552,7 @@ static void __find_joint_capabilities(sccp_channel_t *c, PBX_CHANNEL_TYPE* peer,
 				}
 				ast_format_cap_append_from_cap(caps, payload_caps, media_type);
 				sccp_log(DEBUGCAT_CODEC) (VERBOSE_PREFIX_3 "%s: pbx_retrieve_remote_capabilities: transcoding, best_cap:%s, best_native:%s\n",
-					c->designator, ast_format_get_codec_name(best_fmt_cap), best_fmt_native ? ast_format_get_codec_name(best_fmt_native) : "");
+					c->designator, best_fmt_cap ? ast_format_get_codec_name(best_fmt_cap) : "<none>", best_fmt_native ? ast_format_get_codec_name(best_fmt_native) : "<none>");
 			}
 
 			ast_format_cap_append_from_cap(caps, ast_channel_nativeformats(c->owner), AST_MEDIA_TYPE_UNKNOWN);
@@ -579,6 +583,10 @@ static void __find_joint_capabilities(sccp_channel_t *c, PBX_CHANNEL_TYPE* peer,
 				ao2_ref(best_fmt_native, -1);
 			}
 		}
+		/* Released too. It is appended into caps above, which takes its own reference, so
+		 * the one handed to us here was leaked on every transcoding negotiation. Cleanup
+		 * of NULL is a no-op, which covers the paths that never set it. */
+		ao2_cleanup(best_fmt_cap);
 		return;
 	}
 }
