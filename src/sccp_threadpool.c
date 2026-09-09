@@ -120,8 +120,19 @@ void sccp_threadpool_grow_locked(sccp_threadpool_t * tp_p, int amount)
 
 			pthread_attr_init(&attr);
 			pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-			pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-			pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+			/* Disabled, not deleted, so the intent stays on record. These two act on
+			 * the CALLING thread, not on the worker created below: cancel state and
+			 * cancel type are per-thread and are not inherited across pthread_create.
+			 * So they never configured a worker; what they did do is leave whichever
+			 * Asterisk thread loads or reloads this module asynchronously cancellable,
+			 * meaning it could be torn down while holding a lock or inside an
+			 * allocator. The workers are better off without them anyway: a new thread
+			 * starts out enabled and DEFERRED, so the pthread_cancel() in
+			 * sccp_threadpool_destroy() takes effect at a cancellation point (the
+			 * condition wait) instead of at an arbitrary instruction, and the worker
+			 * already manages its own cancel state around each job.
+			 * pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+			 * pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL); */
 			SCCP_LIST_INSERT_HEAD(&(tp_p->threads), tp_thread, list);
 			pbx_pthread_create(&(tp_thread->thread), &attr, sccp_threadpool_thread_do, (void *) tp_thread);
 			sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "Created thread %d(%p) in pool \n", t, (void *) tp_thread->thread);

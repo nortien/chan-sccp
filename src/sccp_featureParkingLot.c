@@ -314,7 +314,7 @@ static sccp_parkinglot_t * addParkinglot(const char *parkinglot)
 
 static int removeParkinglot(sccp_parkinglot_t *pl)
 {
-	pbx_assert(pl != NULL && pl != NULL);
+	pbx_assert(pl != NULL);
 
 	int res = FALSE;
 	sccp_parkinglot_t *removed = NULL;

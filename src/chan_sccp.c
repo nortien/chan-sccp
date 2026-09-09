@@ -149,7 +149,17 @@ boolean_t sccp_prePBXLoad(void)
 	/* How long to wait for following digits */
 	GLOB(digittimeout) = 8;
 
-	GLOB(debug) = 1;
+	/* GLOB(debug) is deliberately not re-assigned here. It is already set to
+	 * DEBUGCAT_CORE further up, before the thread pool is created, and DEBUGCAT_CORE
+	 * is 1, so this wrote the same value a second time. By then the pool's workers are
+	 * running and every one of their logging macros reads this field, which
+	 * ThreadSanitizer reports as a data race between the loading thread and a worker.
+	 * It is the only global those workers touch, so dropping the duplicate removes the
+	 * race outright rather than hiding it.
+	 *
+	 * The wider ordering is still worth revisiting: the pool is started before this
+	 * whole block of defaults is written, so any global a worker starts reading in
+	 * future would race the same way. */
 	GLOB(sccp_tos) = (0x68 & 0xff);										// AF31
 	GLOB(audio_tos) = (0xB8 & 0xff);									// EF
 	GLOB(video_tos) = (0x88 & 0xff);									// AF41
