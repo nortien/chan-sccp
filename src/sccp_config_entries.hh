@@ -67,7 +67,7 @@ static const SCCPConfigOption sccpGlobalConfigOptions[]={
 	{"autoanswer_tone", 		G_OBJ_REF(autoanswer_tone), 		TYPE_ENUM(skinny,tone),								SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"Zip",				"Autoanswer confirmation tone. For a complete list of tones: `grep SKINNY_TONE_ sccp_enum.in.`\n"
 																														  							"not all the tones can be played in a connected state, so you have to try.\n"},
 	{"remotehangup_tone", 		G_OBJ_REF(remotehangup_tone), 		TYPE_ENUM(skinny,tone),								SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"Zip",				"Passive hangup notification. 0 for none\n"},
-	{"transfer", 			G_OBJ_REF(transfer),			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"yes",				"enable or disable the transfer capability. It does remove the transfer softkey (you can do that manually)\n"},
+	{"transfer", 			G_OBJ_REF(transfer),			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"yes",				"enable or disable the transfer capability. It does remove the transfer softkey (you can do that manually)\n"},
 	{"transfer_tone", 		G_OBJ_REF(transfer_tone), 		TYPE_ENUM(skinny,tone),								SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"0",				"Confirmation tone on transfer. Works only between SCCP devices\n"},
 	{"transfer_on_hangup",		G_OBJ_REF(transfer_on_hangup), 		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"no",				"Complete transfer on hangup, without pressing transfer a second time.\n"
 																																					"Will complete transfer, when the transferer puts the receiver on hook, after the destination has been reached.\n"
@@ -97,7 +97,7 @@ static const SCCPConfigOption sccpGlobalConfigOptions[]={
 																																					"Deprecated options: none, offhook, immediate, dial, ringout and progress. 'none' maps to 'no' and the rest maps to 'yes'.\n"
 																																					"The audio stream will be open in the 'true' state by default.\n"},
 	{"dnd", 			G_OBJ_REF(dndFeature), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_OBSOLETE,					SCCP_CONFIG_NOUPDATENEEDED,		"on",				"(OBSOLETE) Turn on the dnd softkey for all devices. Valid values are 'off', 'on' (replaced by in favor of 'dndFeature').\n"},
-	{"dndFeature",			G_OBJ_REF(dndFeature), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"on",				"Turn on the dnd softkey for all devices. Valid values are 'off', 'on'.\n"},
+	{"dndFeature",			G_OBJ_REF(dndFeature), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"on",				"Turn on the dnd softkey for all devices. Valid values are 'off', 'on'.\n"},
 	{"private", 			G_OBJ_REF(privacy), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"yes",				"permit the private function softkey\n"},
 	{"mwilamp", 			G_OBJ_REF(mwilamp), 			TYPE_ENUM(skinny,lampmode),							SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"on",				"Set the MWI lamp style when MWI active to on, off, wink, flash or blink\n"}, 
 	{"mwioncall", 			G_OBJ_REF(mwioncall), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"no",				"Set the MWI on call.\n"},
@@ -112,14 +112,14 @@ static const SCCPConfigOption sccpGlobalConfigOptions[]={
 																																					"Use with extreme caution as it is very dialplan and provider dependent.\n"},
 	{"callgroup", 			G_OBJ_REF(callgroup), 			TYPE_PARSER(sccp_config_parse_group),						SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"",				"We are in caller groups 1,3,4. Valid for all lines\n"},
 #ifdef CS_SCCP_PICKUP	
-	{"pickupgroup", 		G_OBJ_REF(pickupgroup), 		TYPE_PARSER(sccp_config_parse_group),						SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"",				"We can do call pick-p for call group 1,3,4,5. Valid for all lines\n"},
-	{"directed_pickup", 		G_OBJ_REF(directed_pickup), 		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"yes",				"enable/disable Pickup button to do directed pickup from a specific extension.\n"},
+	{"pickupgroup", 		G_OBJ_REF(pickupgroup), 		TYPE_PARSER(sccp_config_parse_group),						SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"",				"We can do call pick-p for call group 1,3,4,5. Valid for all lines\n"},
+	{"directed_pickup", 		G_OBJ_REF(directed_pickup), 		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"yes",				"enable/disable Pickup button to do directed pickup from a specific extension.\n"},
 	{"directed_pickup_context",	G_OBJ_REF(directed_pickup_context),	TYPE_PARSER(sccp_config_parse_context),						SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"context where direct pickup search for extensions. If not set, the current context of the picking line will be used.\n"},
 	{"directed_pickup_modeanswer", 	G_OBJ_REF(pickup_modeanswer), 		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_DEPRECATED,					SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"(DEPRECATED) Automatically Answer when using Directed Pickup. (default=on) (Replaced by in favor of pickup_modeanswer).\n"},
 	{"pickup_modeanswer", 		G_OBJ_REF(pickup_modeanswer), 		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"yes",				"Automatically Answer when using Directed Pickup. (default=on)"},
 #ifdef CS_AST_HAS_NAMEDGROUP
 	{"namedcallgroup",		G_OBJ_REF(namedcallgroup),		TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"",				"sets the named caller groups\n"},
-	{"namedpickupgroup",		G_OBJ_REF(namedpickupgroup),		TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"",				"sets the named pickup groups (can pickup calls from remote phones which are in this callgroup\n"},
+	{"namedpickupgroup",		G_OBJ_REF(namedpickupgroup),		TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"",				"sets the named pickup groups (can pickup calls from remote phones which are in this callgroup\n"},
 #endif
 #endif
 	{"callhistory_answered_elsewhere", G_OBJ_REF(callhistory_answered_elsewhere),TYPE_ENUM(skinny,callHistoryDisposition),					SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"Ignore",			"Where to store callinfo for calls answered on a remote device. Options: Ignore, Missed Calls (or Placed Calls, Received Calls which are less usefull)"},
@@ -132,7 +132,7 @@ static const SCCPConfigOption sccpGlobalConfigOptions[]={
 	{"devicetable", 		G_OBJ_REF(realtimedevicetable), 	TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"sccpdevice",			"datebasetable for devices\n"},
 	{"linetable", 			G_OBJ_REF(realtimelinetable), 		TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"sccpline",			"datebasetable for lines\n"},
 #endif
-	{"meetme", 			G_OBJ_REF(meetme), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"yes",				"enable/disable conferencing via meetme (on/off), make sure you have one of the meetme apps mentioned below activated in module.conf\n"
+	{"meetme", 			G_OBJ_REF(meetme), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"yes",				"enable/disable conferencing via meetme (on/off), make sure you have one of the meetme apps mentioned below activated in module.conf\n"
 																																	"when switching meetme=on it will search for the first of these three possible meetme applications and set these defaults\n"
 																																					" - {'MeetMe', 'qd'},\n"
 																																					" - {'ConfBridge', 'Mac'},\n"
@@ -194,12 +194,12 @@ static const SCCPConfigOption sccpDeviceConfigOptions[] = {
 	{"keepalive", 			D_OBJ_REF(keepalive), 			TYPE_UINT,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"set keepalive to 60\n"},
 	{"tzoffset", 			D_OBJ_REF(tz_offset), 			TYPE_INT,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"0",				"time zone offset\n"},
 	{"disallow|allow", 		D_OBJ_REF(preferences), 		TYPE_PARSER(sccp_config_parse_codec_preferences),				SCCP_CONFIG_FLAG_DEPRECATED | SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT | SCCP_CONFIG_FLAG_MULTI_ENTRY,	SCCP_CONFIG_NOUPDATENEEDED,	NULL,	"(DEPRECATED) Same as entry in [general] section. Replace by setting codec preferences per line instead.\n"},
-	{"transfer", 			D_OBJ_REF(transfer),			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"enable or disable the transfer capability. It does remove the transfer softkey\n"},
-	{"park", 			D_OBJ_REF(park),			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"yes",				"take a look to the compile how-to. Park stuff is not compiled by default.\n"},
-	{"cfwdall", 			D_OBJ_REF(cfwdall), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		"no",				"activate the call forward stuff and soft keys\n"},
-	{"cfwdbusy", 			D_OBJ_REF(cfwdbusy), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		"no",				"allow call forward when line is busy\n"},
-	{"cfwdnoanswer", 		D_OBJ_REF(cfwdnoanswer),		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		"no",				"allow call forward when line if not being answered\n"},
-	{"dndFeature",	 		D_OBJ_REF(dndFeature.enabled),		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		"yes",				"allow usage do not disturb button\n"},
+	{"transfer", 			D_OBJ_REF(transfer),			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NEEDDEVICERESET,		NULL,				"enable or disable the transfer capability. It does remove the transfer softkey\n"},
+	{"park", 			D_OBJ_REF(park),			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"yes",				"take a look to the compile how-to. Park stuff is not compiled by default.\n"},
+	{"cfwdall", 			D_OBJ_REF(cfwdall), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NEEDDEVICERESET,		"no",				"activate the call forward stuff and soft keys\n"},
+	{"cfwdbusy", 			D_OBJ_REF(cfwdbusy), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NEEDDEVICERESET,		"no",				"allow call forward when line is busy\n"},
+	{"cfwdnoanswer", 		D_OBJ_REF(cfwdnoanswer),		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NEEDDEVICERESET,		"no",				"allow call forward when line if not being answered\n"},
+	{"dndFeature",	 		D_OBJ_REF(dndFeature.enabled),		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NEEDDEVICERESET,		"yes",				"allow usage do not disturb button\n"},
 	{"dnd",				D_OBJ_REF(dndmode),			TYPE_ENUM(sccp,dndmode),							SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"",				"allow setting dnd action for this device. Valid values are 'off', 'reject' (busy signal), 'silent' (ringer = silent) or 'user' (not used at the moment). . The value 'on' has been made obsolete in favor of 'reject'\n"},
 	{"dtmfmode", 			0,				0,	TYPE_STRING,									SCCP_CONFIG_FLAG_OBSOLETE,					SCCP_CONFIG_NOUPDATENEEDED,		"",				"(OBSOLETE) (don't use).\n"},
 	{"force_dtmfmode", 		D_OBJ_REF(dtmfmode), 			TYPE_ENUM(sccp,dtmfmode),							SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"auto",				"auto, skinny or rfc2833. Some phone models with bad firmware do send dtmf in a messed up order and need to be forced to skinny mode.\n"},
@@ -217,11 +217,11 @@ static const SCCPConfigOption sccpDeviceConfigOptions[] = {
 	{"earlyrtp", 			D_OBJ_REF(earlyrtp), 			TYPE_PARSER(sccp_config_parse_earlyrtp),					SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"valid options: yes / no."
 																																					"Deprecated options: none, offhook, immediate, dial, ringout and progress. 'none' maps to 'no' and the rest maps to 'yes'.\n"
 																																					"The audio stream will be open in the 'true' state by default.\n"},
-	{"private", 			D_OBJ_REF(privacyFeature.enabled), 	TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"permit the private function softkey for this device\n"},
-	{"privacy", 			D_OBJ_REF(privacyFeature),	 	TYPE_PARSER(sccp_config_parse_privacyFeature),					SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"full = disable hints notification on devices, on = hints showed depending on privacy key, off = hints always showed\n"},
+	{"private", 			D_OBJ_REF(privacyFeature.enabled), 	TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		NULL,				"permit the private function softkey for this device\n"},
+	{"privacy", 			D_OBJ_REF(privacyFeature),	 	TYPE_PARSER(sccp_config_parse_privacyFeature),					SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		NULL,				"full = disable hints notification on devices, on = hints showed depending on privacy key, off = hints always showed\n"},
 	{"mwilamp",			D_OBJ_REF(mwilamp), 			TYPE_ENUM(skinny,lampmode),							SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"Set the MWI lamp style when MWI active to on, off, wink, flash or blink\n"},
 	{"mwioncall", 			D_OBJ_REF(mwioncall), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"Set the MWI on call.\n"},
-	{"meetme", 			D_OBJ_REF(meetme), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"enable/disable conferencing via app_meetme (on/off)\n"},
+	{"meetme", 			D_OBJ_REF(meetme), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NEEDDEVICERESET,		NULL,				"enable/disable conferencing via app_meetme (on/off)\n"},
 	{"meetmeopts", 			D_OBJ_REF(meetmeopts), 			TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"options to send the app_meetme application (default 'qd' = quiet,dynamic pin)\n"																																					"Other options (A,a,b,c,C,d,D,E,e,F,i,I,l,L,m,M,o,p,P,q,r,s,S,t,T,w,x,X,1) see app_meetme documentation\n"},
 	{"softkeyset", 			D_OBJ_REF(softkeyDefinition),		TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"default",			"use specified softkeyset with name 'default'\n"},
 	{"useRedialMenu", 		D_OBJ_REF(useRedialMenu), 		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"no",				"show redial phone book list instead of dialing the last number (adv_feature). Requires a Phone Service block in SEP....cnf.xml to work correct on Java phones (See conf/tftp/SEP example files)\n"},
@@ -296,14 +296,14 @@ static const SCCPConfigOption sccpLineConfigOptions[] = {
 																																					"Adhoc/PLAR circuits have statically configured endpoints and do not require the user dialing to connect calls.\n"
 																																					" - The adhocNumber is dialed as soon as the Phone is taken off-hook or when the new-call button is pressed.\n"
 																																					" - The number will not be dialed when choosing a line; so when you choose a line you can enter a number manually.\n"},
-	{"meetme", 			L_OBJ_REF(meetme), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_DEVICE_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"enable/disable conferencing via meetme, make sure you have one of the meetme apps mentioned below activated in module.conf.\n"
+	{"meetme", 			L_OBJ_REF(meetme), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_DEVICE_DEFAULT,				SCCP_CONFIG_NEEDDEVICERESET,		NULL,				"enable/disable conferencing via meetme, make sure you have one of the meetme apps mentioned below activated in module.conf.\n"
 																																					"When switching meetme=on it will search for the first of these three possible meetme applications and set these defaults.\n"
 																																					"Meetme=>'qd', ConfBridge=>'Mac', Konference=>'MTV'\n"},
-	{"meetmenum",			L_OBJ_REF(meetmenum), 			TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"This extension will receive meetme requests, SCCP_MEETME_ROOM channel variable will\n"
+	{"meetmenum",			L_OBJ_REF(meetmenum), 			TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NEEDDEVICERESET,		NULL,				"This extension will receive meetme requests, SCCP_MEETME_ROOM channel variable will\n"
 																																					"contain the room number dialed into simpleswitch (this parameter is going to be removed).\n"},
 	{"meetmeopts", 			L_OBJ_REF(meetmeopts),			TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_GET_DEVICE_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"options to send the meetme application, defaults are dependent on meetme app see the list above.\n"
 																																					"Other options (app_meetme: A,a,b,c,C,d,D,E,e,F,i,I,l,L,m,M,o,p,P,q,r,s,S,t,T,w,x,X,1) see conferencing app for specific documentation\n"},
-	{"transfer", 			L_OBJ_REF(transfer),			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"per line transfer capability\n"},
+	{"transfer", 			L_OBJ_REF(transfer),			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NEEDDEVICERESET,		NULL,				"per line transfer capability\n"},
 	{"incominglimit", 		L_OBJ_REF(incominglimit),		TYPE_UINT,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"6",				"allow x number of incoming calls (call waiting)\n"},
 	{"echocancel",			L_OBJ_REF(echocancel),			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"sets the phone echocancel for this line\n"},
 	{"silencesuppression",		L_OBJ_REF(silencesuppression),		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"sets the silence suppression for this line\n"},
@@ -313,18 +313,18 @@ static const SCCPConfigOption sccpLineConfigOptions[] = {
 	{"amaflags",			L_OBJ_REF(amaflags),			TYPE_PARSER(sccp_config_parse_amaflags),					SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"sets the AMA flags stored in the CDR record for this line\n"},
 	{"callgroup",			L_OBJ_REF(callgroup),			TYPE_PARSER(sccp_config_parse_group),						SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"",				"sets the caller groups this line is a member of\n"},
 #ifdef CS_SCCP_PICKUP
-	{"pickupgroup",			L_OBJ_REF(pickupgroup),			TYPE_PARSER(sccp_config_parse_group),						SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"",				"sets the pickup groups this line is a member of (this phone can pickup calls from remote phones which are in this caller group\n"},
-	{"directed_pickup", 		L_OBJ_REF(directed_pickup), 		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"enable/disable Pickup button to do directed pickup from a specific extension.\n"},
+	{"pickupgroup",			L_OBJ_REF(pickupgroup),			TYPE_PARSER(sccp_config_parse_group),						SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"",				"sets the pickup groups this line is a member of (this phone can pickup calls from remote phones which are in this caller group\n"},
+	{"directed_pickup", 		L_OBJ_REF(directed_pickup), 		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NEEDDEVICERESET,		NULL,				"enable/disable Pickup button to do directed pickup from a specific extension.\n"},
 	{"directed_pickup_context",	L_OBJ_REF(directed_pickup_context),	TYPE_PARSER(sccp_config_parse_context),						SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"context where direct pickup search for extensions. If not set, current context or this line will be used.\n"},
 	{"pickup_modeanswer", 		L_OBJ_REF(pickup_modeanswer), 		TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		NULL,				"Automatically Answer when using Directed Pickup. (default=on)"},
 #ifdef CS_AST_HAS_NAMEDGROUP
 	{"namedcallgroup",		L_OBJ_REF(namedcallgroup),		TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		"",				"sets the named caller groups this line is a member of (ast111)\n"},
-	{"namedpickupgroup",		L_OBJ_REF(namedpickupgroup),		TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NOUPDATENEEDED,		"",				"sets the named pickup groups this line is a member of (this phone can pickup calls from remote phones which are in this caller group (ast111)\n"},
+	{"namedpickupgroup",		L_OBJ_REF(namedpickupgroup),		TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT,				SCCP_CONFIG_NEEDDEVICERESET,		"",				"sets the named pickup groups this line is a member of (this phone can pickup calls from remote phones which are in this caller group (ast111)\n"},
 #endif
 #endif
 	{"disallow|allow", 		L_OBJ_REF(preferences), 		TYPE_PARSER(sccp_config_parse_codec_preferences),				SCCP_CONFIG_FLAG_GET_GLOBAL_DEFAULT | SCCP_CONFIG_FLAG_MULTI_ENTRY,	SCCP_CONFIG_NOUPDATENEEDED,	NULL,				"Same as entry in [general] section"},
 	{"parkinglot",			L_OBJ_REF(parkinglot),			TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"",				"parkinglot assigned to this line\n"},
-	{"trnsfvm",			L_OBJ_REF(trnsfvm),			TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"",				"extension to redirect the caller to for voice mail\n"},
+	{"trnsfvm",			L_OBJ_REF(trnsfvm),			TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"",				"extension to redirect the caller to for voice mail\n"},
 	{"initial_dialtone_tone",	L_OBJ_REF(initial_dialtone_tone),	TYPE_ENUM(skinny,tone),								SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"Inside Dial Tone",		"initial dialtone when lifting receiver\n"},
 	{"secondary_dialtone_digits",	L_OBJ_REF(secondary_dialtone_digits),	TYPE_PARSER(sccp_config_parse_secondaryDialtoneDigits),				SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"",				"digits to indicate an external line to user (secondary dialtone) (max 9 digits)\n"},
 	{"secondary_dialtone_tone",	L_OBJ_REF(secondary_dialtone_tone),	TYPE_ENUM(skinny,tone),								SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"Outside Dial Tone",		"outside dialtone frequency\n"},

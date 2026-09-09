@@ -718,7 +718,7 @@ static sccp_configurationchange_t sccp_config_object_setValue(void * const obj, 
 					}
 					break;
 				case 2:
-					if ((!strncmp("0x", tmp_value, 2) && sscanf(tmp_value, "%ux", &uint16num)) || (sscanf(tmp_value, "%u", &uint16num) == 1)) {
+					if ((!strncmp("0x", tmp_value, 2) && sscanf(tmp_value, "%x", &uint16num)) || (sscanf(tmp_value, "%u", &uint16num) == 1)) {
 						/* Same reason as above. This is what let `port = 99999` end up as
 						 * 34463 - a port nobody asked for, reported back by the cli as if
 						 * it had been configured. */
@@ -1145,7 +1145,7 @@ sccp_value_changed_t sccp_config_parse_privacyFeature(void * const dest, const s
 	if (sccp_strcaseequals(value, "full")) {
 		privacyFeature.status  = ~0;
 		privacyFeature.enabled = TRUE;
-	} else if (sccp_true(value) || !sccp_true(value)) {
+	} else if (sccp_true(value) || sccp_false(value)) {
 		privacyFeature.status  = 0;
 		privacyFeature.enabled = sccp_true(value);
 	} else {
@@ -3224,7 +3224,7 @@ void sccp_config_softKeySet(PBX_VARIABLE_TYPE * variable, const char * name)
 		softKeySetConfiguration = (sccp_softKeySetConfiguration_t *)sccp_calloc(1, sizeof(sccp_softKeySetConfiguration_t));
 		memset(softKeySetConfiguration, 0, sizeof(sccp_softKeySetConfiguration_t));
 
-		sccp_copy_string(softKeySetConfiguration->name, name, sizeof(sccp_softKeySetConfiguration_t));
+		sccp_copy_string(softKeySetConfiguration->name, name, sizeof(softKeySetConfiguration->name));
 		softKeySetConfiguration->numberOfSoftKeySets = 0;
 		softKeySetConfiguration->softkeyCbMap        = NULL;                                        // defaults to static softkeyMapCb
 
@@ -3244,11 +3244,12 @@ void sccp_config_softKeySet(PBX_VARIABLE_TYPE * variable, const char * name)
 			}
 
 			char * uriactionstr = pbx_strdup(variable->value);
-			char * event        = strsep(&uriactionstr, ",");
-			if (event && !sccp_strlen_zero(uriactionstr)) {
-				sccp_softkeyMap_replaceCallBackByUriAction(softKeySetConfiguration->softkeyCbMap, labelstr2int(event), uriactionstr);
+			char * rest         = uriactionstr;
+			char * event        = strsep(&rest, ",");
+			if (event && !sccp_strlen_zero(rest)) {
+				sccp_softkeyMap_replaceCallBackByUriAction(softKeySetConfiguration->softkeyCbMap, labelstr2int(event), rest);
 			} else {
-				sccp_log(DEBUGCAT_CONFIG)(VERBOSE_PREFIX_3 "SCCP: UriAction softkey (%s) not found, or no uris (%s) specified\n", event, uriactionstr);
+				sccp_log(DEBUGCAT_CONFIG)(VERBOSE_PREFIX_3 "SCCP: UriAction softkey (%s) not found, or no uris (%s) specified\n", event, rest);
 			}
 			sccp_free(uriactionstr);
 		} else if (sccp_strcaseequals(variable->name, "onhook")) {
@@ -3640,7 +3641,6 @@ static int _config_generate_wiki(char * filename)
 		if (!sccpConfigSegment) {
 			pbx_log(LOG_ERROR, "Could not find segment:%d\n", (int)segment);
 			fclose(f);
-			close(fd);
 			return -3;
 		}
 
@@ -3721,14 +3721,12 @@ static int _config_generate_wiki(char * filename)
 			} else {
 				pbx_log(LOG_ERROR, "Error creating new variable structure for %s='%s'\n", config[sccp_option].name, config[sccp_option].defaultValue);
 				fclose(f);
-				close(fd);
 				return 2;
 			}
 		}
 		fprintf(f, "</table><br>\n");
 	}
 	fclose(f);
-	close(fd);
 	pbx_log(LOG_NOTICE, "Created new wiki file '%s'\n", fn);
 
 	return 0;
@@ -3800,7 +3798,6 @@ int sccp_config_generate(char * filename, int configType)
 		if (!sccpConfigSegment) {
 			pbx_log(LOG_ERROR, "Could not find segment:%d\n", (int)segment);
 			fclose(f);
-			close(fd);
 			return -3;
 		}
 		if (configType == 0 && (segment == SCCP_CONFIG_DEVICE_SEGMENT || segment == SCCP_CONFIG_LINE_SEGMENT)) {
@@ -3911,7 +3908,6 @@ int sccp_config_generate(char * filename, int configType)
 				} else {
 					pbx_log(LOG_ERROR, "Error creating new variable structure for %s='%s'\n", config[sccp_option].name, config[sccp_option].defaultValue);
 					fclose(f);
-					close(fd);
 					return 2;
 				}
 			}
@@ -3919,7 +3915,6 @@ int sccp_config_generate(char * filename, int configType)
 		sccp_log((DEBUGCAT_CONFIG))("\n");
 	}
 	fclose(f);
-	close(fd);
 	pbx_log(LOG_NOTICE, "Created new config file '%s'\n", fn);
 
 	return 0;
