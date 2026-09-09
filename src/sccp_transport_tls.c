@@ -147,7 +147,7 @@ static int tls_listen(sccp_socket_connection_t * sc, int backlog)
 
 static sccp_socket_connection_t * tls_accept(sccp_socket_connection_t * in_sc, struct sockaddr * addr, socklen_t * addrlen, sccp_socket_connection_t * out_sc)
 {
-	unsigned long ssl_err;
+	int           ssl_err;
 	int           newfd = 0;
 	SSL *         ssl   = NULL;
 	// sccp_log(DEBUGCAT_SOCKET)(VERBOSE_PREFIX_1 "TLS Transport accept...\n");
@@ -167,7 +167,7 @@ static sccp_socket_connection_t * tls_accept(sccp_socket_connection_t * in_sc, s
 		SSL_set_fd(ssl, newfd);
 		ssl_err = SSL_accept(ssl);
 		if (ssl_err <= 0) {
-			pbx_log(LOG_ERROR, "SSL Error occured: %lu '%s'.\n", ssl_err, ERR_reason_error_string(ssl_err));
+			pbx_log(LOG_ERROR, "SSL accept failed (ret=%d): %s\n", ssl_err, ERR_reason_error_string(ERR_get_error()));
 			break;
 		}
 		out_sc->fd  = newfd;
@@ -184,6 +184,7 @@ static sccp_socket_connection_t * tls_accept(sccp_socket_connection_t * in_sc, s
 	if (newfd >= 0) {
 		close(newfd);
 	}
+	out_sc->fd = -1;								/* mark failure; caller checks out_sc->fd, not the return value */
 	return NULL;
 }
 
