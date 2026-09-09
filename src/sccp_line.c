@@ -169,13 +169,32 @@ void sccp_line_removeFromGlobals(sccp_line_t * line)
 {
 	sccp_line_t *removed_line = NULL;
 	if (line) {
+		boolean_t was_member = FALSE;
 		SCCP_RWLIST_WRLOCK(&GLOB(lines));
-		removed_line = SCCP_RWLIST_REMOVE(&GLOB(lines), line, list);
+		/* SCCP_LIST_REMOVE hands back the element unconditionally: it does not
+		 * report whether the element was actually linked into this list. Releasing
+		 * on a non-member would drop a reference GLOB(lines) never held, taking the
+		 * refcount below its real value and destroying the line while it is still
+		 * in use. Test membership explicitly (a linked element is either the head
+		 * or has a predecessor; removal resets both pointers to NULL) so that this
+		 * function is idempotent.
+		 *
+		 * Reached on realtime lines: sccp_line_clean(l, TRUE) calls
+		 * sccp_linedevice_remove(NULL, l), whose realtime auto-cleaner calls
+		 * sccp_line_clean(l, TRUE) again once the last device is gone, so the outer
+		 * call arrives here a second time on a line the inner call already removed. */
+		if(GLOB(lines).first == line || line->list.prev != NULL) {
+			was_member = TRUE;
+			removed_line = SCCP_RWLIST_REMOVE(&GLOB(lines), line, list);
+		}
 		SCCP_RWLIST_UNLOCK(&GLOB(lines));
 
-		sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "Removed line '%s' from Glob(lines)\n", removed_line->name);
-
-		sccp_line_release(&removed_line);								/* explicit release */
+		if(was_member && removed_line) {
+			sccp_log((DEBUGCAT_CORE))(VERBOSE_PREFIX_3 "Removed line '%s' from Glob(lines)\n", removed_line->name);
+			sccp_line_release(&removed_line); /* explicit release */
+		} else {
+			sccp_log((DEBUGCAT_CORE))(VERBOSE_PREFIX_3 "Line '%s' was not in Glob(lines), nothing to release\n", line->name);
+		}
 	} else {
 		pbx_log(LOG_ERROR, "Removing null from global line list is not allowed!\n");
 	}
