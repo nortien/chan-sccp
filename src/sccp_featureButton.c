@@ -217,8 +217,23 @@ void sccp_featButton_changed(constDevicePtr device, sccp_feature_type_t featureT
 					break;
 #ifdef CS_DEVSTATE_FEATURE
 					case SCCP_FEATURE_DEVSTATE:
-						/* handled by sccp_devstate.c */
-						goto EXIT_FUNC;
+						/* Answer the request. The jump used to leave here without sending
+						 * anything, on the grounds that the device state module handles
+						 * these buttons. It does, but only from the point the device is
+						 * fully registered: its initial-state notifier runs on the
+						 * registered event, and a phone reaches that state only after the
+						 * driver has replied to this very request. So a phone with a
+						 * device state button asked, was never answered, and stopped
+						 * short of finishing registration.
+						 *
+						 * The button type is chosen by the same rule the template builder
+						 * uses for this feature, so the two agree on what was placed. */
+						if(device->inuseprotocolversion >= 15 && device->skinny_type != SKINNY_DEVICETYPE_CISCO8941 && device->skinny_type != SKINNY_DEVICETYPE_CISCO8945) {
+							buttonID = SKINNY_BUTTONTYPE_MULTIBLINKFEATURE;
+						} else {
+							buttonID = SKINNY_BUTTONTYPE_FEATURE;
+						}
+						break;
 #endif
 					case SCCP_FEATURE_HOLD:
 						buttonID = SKINNY_BUTTONTYPE_HOLD;
@@ -344,7 +359,8 @@ void sccp_featButton_changed(constDevicePtr device, sccp_feature_type_t featureT
 			sccp_log((DEBUGCAT_FEATURE_BUTTON + DEBUGCAT_FEATURE)) (VERBOSE_PREFIX_3 "%s: (sccp_featButton_changed) Got Feature Status Request. Instance = %d, Label: '%s', Status: %d\n", DEV_ID_LOG(device), instance, config->label, config->button.feature.status);
 		}
 	}
-EXIT_FUNC:
+	/* The EXIT_FUNC label that used to stand here had exactly one user, the device
+	 * state case above, which now answers the request like every other feature. */
 	SCCP_LIST_UNLOCK(&(((devicePtr)device)->buttonconfig));
 }
 // kate: indent-width 8; replace-tabs off; indent-mode cstyle; auto-insert-doxygen on; line-numbers on; tab-indents on; keep-extra-spaces off; auto-brackets off;

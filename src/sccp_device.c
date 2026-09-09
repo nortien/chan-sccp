@@ -2017,7 +2017,11 @@ void sccp_dev_speed_find_byindex(constDevicePtr d, const uint16_t instance, bool
 				sccp_copy_string(k->ext, config->button.speeddial.ext, sizeof(k->ext));
 				sccp_copy_string(k->hint, config->button.speeddial.hint, sizeof(k->hint));
 				
-			} else if(FALSE == withHint && sccp_strlen_zero(config->button.speeddial.hint)) {
+			/* A configured hint that the button template did not honour, which is what
+			 * happens on every model whose template offers no multi-purpose slots,
+			 * leaves an ordinary speeddial button. It has to be found by the ordinary
+			 * lookup, or the phone is sent an empty button and shows nothing. */
+			} else if(FALSE == withHint && (sccp_strlen_zero(config->button.speeddial.hint) || !config->button.speeddial.hintActive)) {
 				k->valid = TRUE;
 				k->instance = instance;
 				k->type = SCCP_BUTTONTYPE_SPEEDDIAL;
@@ -3342,7 +3346,11 @@ uint8_t __PURE__ sccp_device_find_index_for_line(constDevicePtr d, const char *l
 
 gcc_inline int16_t sccp_device_buttonIndex2lineInstance(constDevicePtr d, uint16_t buttonIndex)
 {
-	if (buttonIndex > 0 && buttonIndex < StationMaxButtonTemplateSize && d->buttonTemplate[buttonIndex - 1].instance) {
+	/* The template is NULL before the phone has asked for it and again after the
+	 * device is cleaned up. This path belongs to phones below protocol 15, which
+	 * send a button index where newer ones send a line instance, so a keypress
+	 * arriving outside that window dereferenced NULL. */
+	if (d->buttonTemplate && buttonIndex > 0 && buttonIndex < StationMaxButtonTemplateSize && d->buttonTemplate[buttonIndex - 1].instance) {
 		return d->buttonTemplate[buttonIndex - 1].instance;
 	}
 	pbx_log(LOG_ERROR, "%s: buttonIndex2lineInstance for buttonIndex:%d failed!\n", d->id, buttonIndex);

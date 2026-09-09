@@ -1169,25 +1169,36 @@ static btnlist *sccp_make_button_template(devicePtr d)
 					if ((btn[i].type == SCCP_BUTTONTYPE_MULTI || btn[i].type == SCCP_BUTTONTYPE_SPEEDDIAL)) {
 
 //						buttonconfig->instance = btn[i].instance = i + 1;
+						/* Record whether the hint was actually honoured for this device,
+						 * rather than leaving the lookup to infer it from the presence of
+						 * a hint string. A model whose template offers no multi-purpose
+						 * slots, which is every older one, lands in the plain speeddial
+						 * branch below even when a hint is configured: the button is
+						 * placed as an ordinary speeddial and the hint is not used. The
+						 * lookup then searched for a speeddial whose config carries no
+						 * hint, found nothing, and the phone was sent an empty button. */
 						if (!sccp_strlen_zero(buttonconfig->button.speeddial.hint)
 						    && btn[i].type == SCCP_BUTTONTYPE_MULTI				/* we can set our feature */
 						    ) {
+							buttonconfig->button.speeddial.hintActive = TRUE;
 #ifdef CS_DYNAMIC_SPEEDDIAL
 							if (d->inuseprotocolversion >= 15) {
 								btn[i].type = SKINNY_BUTTONTYPE_BLFSPEEDDIAL;
 								buttonconfig->instance = btn[i].instance = speeddialInstance++;
-							} else 
+							} else
 #endif
 							{
 								btn[i].type = SKINNY_BUTTONTYPE_LINE;
 								buttonconfig->instance = btn[i].instance = lineInstance++;
 							}
 						} else {
+							buttonconfig->button.speeddial.hintActive = FALSE;
 							btn[i].type = SKINNY_BUTTONTYPE_SPEEDDIAL;
 							buttonconfig->instance = btn[i].instance = speeddialInstance++;
 
 						}
 					} else if (btn[i].type == SCCP_BUTTONTYPE_ABBRDIAL) {
+						buttonconfig->button.speeddial.hintActive = FALSE;
 						btn[i].type = SKINNY_BUTTONTYPE_SPEEDDIAL;
 						buttonconfig->instance = btn[i].instance = speeddialInstance++;
 	 					//sccp_log(DEBUGCAT_CORE)(VERBOSE_PREFIX_2 "%s: Assigned Speeddial %d to AbbrDial %d\n", d->id, i, buttonconfig->instance);
@@ -1347,8 +1358,18 @@ static btnlist *sccp_make_button_template(devicePtr d)
 	}
 
 	// all non defined buttons are set to UNUSED
+	//
+	// SPEEDDIAL and HINT belong in this list too. Every 0xF1..0xF5 value is an
+	// internal placeholder written by the button template, not a Skinny button type,
+	// and the response builder passes an unrecognised type through to the wire
+	// unchanged. Only MULTI and ABBRDIAL were cleared, so an unclaimed speeddial or
+	// hint slot was announced to the phone as button type 0xF3 or 0xF4, which mean
+	// nothing to it. Phones that get such slots are the older models whose templates
+	// hand out plain speeddial positions, and a leaked placeholder in this very
+	// message is a known cause of a phone rebooting during registration.
 	for (i = 0; i < StationMaxButtonTemplateSize; i++) {
-		if (btn[i].type == SCCP_BUTTONTYPE_MULTI || btn[i].type == SCCP_BUTTONTYPE_ABBRDIAL) {
+		if (btn[i].type == SCCP_BUTTONTYPE_MULTI || btn[i].type == SCCP_BUTTONTYPE_ABBRDIAL
+		    || btn[i].type == SCCP_BUTTONTYPE_SPEEDDIAL || btn[i].type == SCCP_BUTTONTYPE_HINT) {
 			btn[i].type = SKINNY_BUTTONTYPE_UNUSED;
 		}
 	}
@@ -1555,7 +1576,11 @@ void sccp_handle_button_template_req(constSessionPtr s, devicePtr d, constMessag
 	msg_out->data.ButtonTemplateMessage.lel_totalButtonCount = htolel(lastUsedButtonPosition + 1);
 
 	/* set speeddial for older devices like 7912 */
-	uint32_t speeddialInstance = 0;
+	/* Numbering starts at one, not zero. Zero is this loop's own marker for a button
+	 * it has not placed yet, and the speeddial lookup rejects it outright, so the
+	 * first unplaced button used to be given a number that can never be looked up and
+	 * that the next pass reads back as still unplaced. */
+	uint32_t speeddialInstance = SCCP_FIRST_SPEEDDIALINSTANCE;
 	sccp_buttonconfig_t * config = NULL;
 
 	sccp_log((DEBUGCAT_BUTTONTEMPLATE + DEBUGCAT_SPEEDDIAL))(VERBOSE_PREFIX_3 "%s: configure unconfigured speeddialbuttons \n", d->id);
@@ -2879,7 +2904,14 @@ void handle_soft_key_set_req(constSessionPtr s, devicePtr d, constMessagePtr msg
 
 		pbx_str_append(&outputStr, buffersize, "%-15s => |", skinny_keymode2str(v->id));
 
-		for (c = 0, cp = 0; c < v->count; c++, cp++) {
+		/* cp advances only where a key is actually placed, further down. It used to
+		 * advance here alongside c, so every key skipped by the tests below left a
+		 * zeroed slot in the middle of the row instead of letting the rest close up.
+		 * The two counters exist precisely because the output position is not the
+		 * input position; with both advancing together one of them is redundant. On
+		 * a phone with few visible softkeys, keys after such a hole fall off the
+		 * display, which reads as a custom softkey set not working. */
+		for (c = 0, cp = 0; c < v->count; c++) {
 			msg_out->data.SoftKeySetResMessage.definition[v->id].softKeyTemplateIndex[cp] = 0;
 			/* look for the SKINNY_LBL_ number in the softkeysmap */
 			if ((b[c] == SKINNY_LBL_PARK) && (!d->park)) {
@@ -2949,6 +2981,7 @@ void handle_soft_key_set_req(constSessionPtr s, devicePtr d, constMessagePtr msg
 					ast_str_append(&outputStr, buffersize, "%-2d:%-9s|", c, label2str(softkeysmap[j]));
 					msg_out->data.SoftKeySetResMessage.definition[v->id].softKeyTemplateIndex[cp] = (j + 1);
 					msg_out->data.SoftKeySetResMessage.definition[v->id].les_softKeyInfoIndex[cp] = htoles(j + 301);
+					cp++;
 					break;
 				}
 			}

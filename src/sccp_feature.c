@@ -710,7 +710,9 @@ void sccp_feat_conference_start(constDevicePtr device, const uint32_t lineInstan
 			// all channels on this phone
 			uint8_t i = 0;
 
-			for (i = 0; i < StationMaxButtonTemplateSize; i++) {
+			/* Guarded: the template is NULL until the phone requests it and again
+			 * after device cleanup. */
+			for (i = 0; d->buttonTemplate && i < StationMaxButtonTemplateSize; i++) {
 				if (d->buttonTemplate[i].type == SKINNY_BUTTONTYPE_LINE && d->buttonTemplate[i].ptr) {
 					AUTO_RELEASE(sccp_line_t, line , sccp_line_retain(d->buttonTemplate[i].ptr));
 

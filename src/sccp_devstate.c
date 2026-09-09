@@ -326,6 +326,12 @@ enum ast_device_state sccp_devstate_getNextDeviceState(constDevicePtr d, sccp_bu
 	SCCP_LIST_LOCK(&deviceStates);
 	deviceState_t * deviceState = getDeviceStateHandler(config->button.feature.options);
 	SCCP_LIST_UNLOCK(&deviceStates);
+	if(!deviceState) {
+		/* There is no handler for this device state until the device finishes
+		 * registering, because only that path creates one. A button pressed before
+		 * then arrived here and the list lock below dereferenced NULL. */
+		return nextstate;
+	}
 
 	SubscribingDevice_t * subscriber = NULL;
 
