@@ -1502,25 +1502,34 @@ void sccp_feat_monitor(constDevicePtr device, constLinePtr no_line, uint32_t no_
 		constChannelPtr channel = maybe_channel;
 		pbx_str_t *amiCommandStr = pbx_str_alloca(DEFAULT_PBX_STR_BUFFERSIZE);
 		char * outStr = NULL;
+		/* MixMonitor, not Monitor. The Monitor and StopMonitor actions come from
+		 * res_monitor, which Asterisk removed in version 21: verified on the stands,
+		 * where the module is present on 18 and 20 and absent on 21, 22 and 23. On
+		 * those three the action has no handler, the acknowledgement never matches,
+		 * and the code below reports "Recording failed" and disables the feature. So
+		 * the Record softkey could not work on three of the five Asterisk versions
+		 * this driver supports, on any phone. MixMonitor has been available since
+		 * Asterisk 11 and is present on every stand, so no version guard is needed,
+		 * and it mixes both directions by default, which is what Mix: true asked
+		 * res_monitor for. The recording format follows the file extension. */
 		if (!(monitorFeature->status & SCCP_FEATURE_MONITOR_STATE_ACTIVE)) {
-			pbx_str_append(&amiCommandStr,0 ,"Action: Monitor\r\n");
+			pbx_str_append(&amiCommandStr,0 ,"Action: MixMonitor\r\n");
 			pbx_str_append(&amiCommandStr,0 ,"Channel: %s\r\n", pbx_channel_name(channel->owner));
 			pbx_str_append(&amiCommandStr,0 ,"File: mixmonitor-%s-%d_%s.wav\r\n", channel->line->name, channel->callid, iPbx.getChannelUniqueID(channel));
-			pbx_str_append(&amiCommandStr,0 ,"Format: wav\r\n");
-			pbx_str_append(&amiCommandStr,0 ,"Mix: true\r\n");
 			pbx_str_append(&amiCommandStr,0 ,"\r\n");
 			//monitorFeature->status &= ~SCCP_FEATURE_MONITOR_STATE_ACTIVE;					/* no need to change status, will be done by sccp_asterisk_managerHookHelper */
 		} else {
-			pbx_str_append(&amiCommandStr,0 ,"Action: StopMonitor\r\n");
+			pbx_str_append(&amiCommandStr,0 ,"Action: StopMixMonitor\r\n");
 			pbx_str_append(&amiCommandStr,0 ,"Channel: %s\r\n", pbx_channel_name(channel->owner));
 			pbx_str_append(&amiCommandStr,0 ,"\r\n");
 			//monitorFeature->status |= SCCP_FEATURE_MONITOR_STATE_ACTIVE;
 		}
 		if (sccp_manager_action2str(pbx_str_buffer(amiCommandStr), &outStr) && outStr) {
-			if (	
-				sccp_strequals(outStr, "Response: Success\r\nMessage: Started monitoring channel\r\n\r\n") ||
-				sccp_strequals(outStr, "Response: Success\r\nMessage: Stopped monitoring channel\r\n\r\n")
-			) {
+			/* Judged by the response line rather than by the whole acknowledgement
+			 * text. The two exact strings compared here were res_monitor's wording,
+			 * so any rewording, and certainly a different action, silently turned the
+			 * feature off for the rest of the call. */
+			if (strstr(outStr, "Response: Success") != NULL) {
 				sccp_log((DEBUGCAT_FEATURE)) (VERBOSE_PREFIX_3 "%s: (sccp_feat_monitor) AMI monitor request sent successfully.\n", DEV_ID_LOG(device));
 				// sccp_asterisk_managerHookHelper will catch the result and update the softkey / featureButton accordingly.
 			} else {

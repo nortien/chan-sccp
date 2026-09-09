@@ -1013,7 +1013,15 @@ static int sccp_asterisk_managerHookHelper(int category, const char *event, char
 	char * dupStr = NULL;
 
 	if (EVENT_FLAG_CALL == category) {
-		if (!strcasecmp("MonitorStart", event) || !strcasecmp("MonitorStop", event)) {
+		/* MixMonitor's events belong here alongside Monitor's. The recording feature
+		 * now drives MixMonitor, because the module behind Monitor was removed from
+		 * Asterisk in version 21, and MixMonitor announces itself under its own event
+		 * names. Watching only the old names left this hook silent: the feature's
+		 * state never flipped to active, so the phone's key never lit and every press
+		 * started another recording on the same channel. Observed on the bench, 16
+		 * recordings from a handful of presses. */
+		if (!strcasecmp("MonitorStart", event) || !strcasecmp("MonitorStop", event)
+		    || !strcasecmp("MixMonitorStart", event) || !strcasecmp("MixMonitorStop", event)) {
 			AUTO_RELEASE(sccp_channel_t, channel , NULL);
 			struct message m = { 0 };
 
@@ -1050,7 +1058,7 @@ static int sccp_asterisk_managerHookHelper(int category, const char *event, char
 				AUTO_RELEASE(sccp_device_t, d , sccp_channel_getDevice(channel));
 				if (d) {
 					sccp_log(DEBUGCAT_CORE)("%s: (managerHookHelper) MonitorStart/MonitorStop on Device: %s\n", channel->designator, d->id);	/* temp */
-					if (!strcasecmp("MonitorStart", event)) {
+					if (!strcasecmp("MonitorStart", event) || !strcasecmp("MixMonitorStart", event)) {
 						d->monitorFeature.status |= SCCP_FEATURE_MONITOR_STATE_ACTIVE;
 					} else {
 						d->monitorFeature.status &= ~SCCP_FEATURE_MONITOR_STATE_ACTIVE;
