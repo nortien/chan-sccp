@@ -284,6 +284,9 @@ static int parse_outputfmt(PBX_VARIABLE_TYPE * request_params, PBX_VARIABLE_TYPE
 	const char * requested_outputfmt = sccp_retrieve_str_variable_byKey(request_params, "outformat");
 	if (!sccp_strlen_zero(requested_outputfmt)) {
 		*outputfmt = sccp_xml_outputfmt_str2val(requested_outputfmt);
+		if (*outputfmt < 0 || (size_t)*outputfmt >= ARRAY_LEN(outputfmt2contenttype)) {
+			*outputfmt = SCCP_XML_OUTPUTFMT_CXML;			/* unknown "outformat" -> safe default; str2val returns the sentinel for an unmatched string, which would index outputfmt2contenttype[] out of bounds */
+		}
 		return 0;
 	}
 	return (*outputfmt == SCCP_XML_OUTPUTFMT_NULL) ? -1 : 0;

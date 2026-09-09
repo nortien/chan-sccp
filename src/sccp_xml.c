@@ -167,7 +167,8 @@ static boolean_t applyStyleSheet(xmlDoc * const doc, PBX_VARIABLE_TYPE * pbx_par
 			res              = TRUE;
 		}
 		xsltFreeStylesheet(xslt);
-		xsltCleanupGlobals();
+		/* xsltCleanupGlobals() is process-global libxslt teardown; calling it after
+		 * every transform corrupts state for concurrent transforms. Leave it out. */
 	}
 
 	return res;
@@ -203,7 +204,8 @@ static boolean_t applyStyleSheetByName(xmlDoc * const doc, const char * const st
 		}
 		// sccp_log(DEBUGCAT_WEBSERVICE)(VERBOSE_PREFIX_3 "applied Stylesheet doc: '%s'\n", dump(doc, TRUE));
 		xsltFreeStylesheet(xslt);
-		xsltCleanupGlobals();
+		/* xsltCleanupGlobals() is process-global libxslt teardown; calling it after
+		 * every transform corrupts state for concurrent transforms. Leave it out. */
 	}
 
 	return res;
@@ -216,8 +218,10 @@ static void destroyDoc(xmlDoc * const * doc)
 		xmlFreeDoc(*doc);
 		*(xmlDoc **)doc = NULL;
 	}
-	xmlCleanupParser();
-	xmlMemoryDump();
+	/* xmlCleanupParser()/xmlMemoryDump() tear down process-global libxml2 state
+	 * and must not be called per-document: a concurrent /sccp request parsing
+	 * another document would then reference freed global state. Freeing this one
+	 * document with xmlFreeDoc() above is all that is needed here. */
 }
 
 /* private functions */
