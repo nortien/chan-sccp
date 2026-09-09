@@ -159,22 +159,27 @@ static void sccp_threadpool_check_size(sccp_threadpool_t * tp_p)
 {
 	if (tp_p && !tp_p->sccp_threadpool_shuttingdown) {
 		sccp_log((DEBUGCAT_THPOOL)) (VERBOSE_PREFIX_3 "(sccp_threadpool_check_resize) in thread: %p\n", (void *) pthread_self());
+		/* the queue length is owned by the jobs lock (workers pop under it); read it there instead of racing
+		 * the workers from under the threads lock. The two locks are never nested, keep it that way. */
+		SCCP_LIST_LOCK(&(tp_p->jobs));
+		uint32_t jobs = SCCP_LIST_GETSIZE(&tp_p->jobs);
+		SCCP_LIST_UNLOCK(&(tp_p->jobs));
 		SCCP_LIST_LOCK(&(tp_p->threads));
 		{
-			if (SCCP_LIST_GETSIZE(&tp_p->jobs) > (SCCP_LIST_GETSIZE(&tp_p->threads) * 2) && SCCP_LIST_GETSIZE(&tp_p->threads) < THREADPOOL_MAX_SIZE) {	// increase
+			if (jobs > (SCCP_LIST_GETSIZE(&tp_p->threads) * 2) && SCCP_LIST_GETSIZE(&tp_p->threads) < THREADPOOL_MAX_SIZE) {	// increase
 				sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "Add new thread to threadpool %p\n", tp_p);
 				sccp_threadpool_grow_locked(tp_p, 1);
 				tp_p->last_resize = time(0);
 			} else if (((time(0) - tp_p->last_resize) > THREADPOOL_RESIZE_INTERVAL * 3) &&		// wait a little longer to decrease
-				   (SCCP_LIST_GETSIZE(&tp_p->threads) > THREADPOOL_MIN_SIZE && SCCP_LIST_GETSIZE(&tp_p->jobs) < (SCCP_LIST_GETSIZE(&tp_p->threads) / 2))) {	// decrease
+				   (SCCP_LIST_GETSIZE(&tp_p->threads) > THREADPOOL_MIN_SIZE && jobs < (SCCP_LIST_GETSIZE(&tp_p->threads) / 2))) {	// decrease
 				sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "Remove thread %d from threadpool %p\n", SCCP_LIST_GETSIZE(&tp_p->threads) - 1, tp_p);
 				// kill last thread only if it is not executed by itself
 				sccp_threadpool_shrink_locked(tp_p, 1);
 				tp_p->last_resize = time(0);
 			}
-			tp_p->last_size_check = time(0);
-			tp_p->job_high_water_mark = SCCP_LIST_GETSIZE(&tp_p->jobs);
-			sccp_log((DEBUGCAT_THPOOL)) (VERBOSE_PREFIX_3 "(sccp_threadpool_check_resize) Number of threads: %d, job_high_water_mark: %d\n", SCCP_LIST_GETSIZE(&tp_p->threads), tp_p->job_high_water_mark);
+			__atomic_store_n(&tp_p->last_size_check, time(0), __ATOMIC_RELAXED);			/* read by every worker without a lock */
+			__atomic_store_n(&tp_p->job_high_water_mark, (int) jobs, __ATOMIC_RELAXED);
+			sccp_log((DEBUGCAT_THPOOL)) (VERBOSE_PREFIX_3 "(sccp_threadpool_check_resize) Number of threads: %d, job_high_water_mark: %d\n", SCCP_LIST_GETSIZE(&tp_p->threads), __atomic_load_n(&tp_p->job_high_water_mark, __ATOMIC_RELAXED));
 		}
 		SCCP_LIST_UNLOCK(&(tp_p->threads));
 	}
@@ -250,7 +255,7 @@ void *sccp_threadpool_thread_do(void *p)
 				sccp_free(job);									/* DEALLOC job */
 			}
 			// check number of threads in threadpool
-			if ((time(0) - tp_p->last_size_check) > THREADPOOL_RESIZE_INTERVAL) {
+			if ((time(0) - __atomic_load_n(&tp_p->last_size_check, __ATOMIC_RELAXED)) > THREADPOOL_RESIZE_INTERVAL) {
 				sccp_threadpool_check_size(tp_p);						/* Check Resizing */
 			}
 		}
@@ -269,8 +274,8 @@ int sccp_threadpool_add_work(sccp_threadpool_t * tp_p, void *(*function_p) (void
 		sccp_threadpool_job_t * newJob = NULL;
 
 		if (!(newJob = (sccp_threadpool_job_t *) sccp_calloc(sizeof *newJob, 1))) {
-        		pbx_log(LOG_ERROR, SS_Memory_Allocation_Error, "SCCP");
-			exit(1);
+			pbx_log(LOG_ERROR, SS_Memory_Allocation_Error, "SCCP");
+			return 0;										/* refuse this job; do not take the whole PBX down */
 		}
 
 		/* add function and argument */
@@ -367,8 +372,8 @@ void sccp_threadpool_jobqueue_add(sccp_threadpool_t * tp_p, sccp_threadpool_job_
 		return;
 	}
 
-	sccp_log((DEBUGCAT_THPOOL)) (VERBOSE_PREFIX_3 "(sccp_threadpool_jobqueue_add) tp_p: %p, jobCount: %d\n", tp_p, SCCP_LIST_GETSIZE(&tp_p->jobs));
 	SCCP_LIST_LOCK(&(tp_p->jobs));
+	sccp_log((DEBUGCAT_THPOOL)) (VERBOSE_PREFIX_3 "(sccp_threadpool_jobqueue_add) tp_p: %p, jobCount: %d\n", tp_p, SCCP_LIST_GETSIZE(&tp_p->jobs));
 	if (tp_p->sccp_threadpool_shuttingdown) {
 		pbx_log(LOG_ERROR, "(sccp_threadpool_jobqueue_add) shutting down. skipping work\n");
 		SCCP_LIST_UNLOCK(&(tp_p->jobs));
@@ -382,16 +387,24 @@ void sccp_threadpool_jobqueue_add(sccp_threadpool_t * tp_p, sccp_threadpool_job_
 	int jobs = (int) SCCP_LIST_GETSIZE(&tp_p->jobs);
 	SCCP_LIST_UNLOCK(&(tp_p->jobs));
 
-	if (jobs > tp_p->job_high_water_mark) {
-		tp_p->job_high_water_mark = jobs;
+	{
+		/* job_high_water_mark is updated here without the jobs lock and reset by the worker
+		 * doing the size check under the threads lock: keep it an atomic max */
+		int hwm = __atomic_load_n(&tp_p->job_high_water_mark, __ATOMIC_RELAXED);
+		while (jobs > hwm && !__atomic_compare_exchange_n(&tp_p->job_high_water_mark, &hwm, jobs, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+			/* hwm was reloaded by the failed exchange; retry while ours is still higher */
+		}
 	}
 	pbx_cond_signal(&(tp_p->work));
 }
 
 int sccp_threadpool_jobqueue_count(sccp_threadpool_t * tp_p)
 {
-	sccp_log((DEBUGCAT_THPOOL)) (VERBOSE_PREFIX_3 "(sccp_threadpool_jobqueue_count) tp_p: %p, jobCount: %d\n", tp_p, SCCP_LIST_GETSIZE(&tp_p->jobs));
-	return SCCP_LIST_GETSIZE(&tp_p->jobs);
+	SCCP_LIST_LOCK(&(tp_p->jobs));
+	int jobs = (int) SCCP_LIST_GETSIZE(&tp_p->jobs);
+	SCCP_LIST_UNLOCK(&(tp_p->jobs));
+	sccp_log((DEBUGCAT_THPOOL)) (VERBOSE_PREFIX_3 "(sccp_threadpool_jobqueue_count) tp_p: %p, jobCount: %d\n", tp_p, jobs);
+	return jobs;
 }
 
 
