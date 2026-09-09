@@ -420,16 +420,16 @@ void handle_XMLAlarmMessage(constSessionPtr s, devicePtr no_d, constMessagePtr m
 		   sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_2 "Device Name: %s\n", deviceName);
 		   }
 		 */
-		if (sscanf(line, "<Alarm Name=\"%[a-zA-Z]\">", alarmName) == 1) {
+		if (sscanf(line, "<Alarm Name=\"%100[a-zA-Z]\">", alarmName) == 1) {
 			sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_2 "Alarm Type: %s\n", alarmName);
 		}
 		if (sscanf(line, "<Enum name=\"ReasonForOutOfService\">%d</Enum>>", &reasonEnum) == 1) {
 			sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_2 "Reason Enum: %d\n", reasonEnum);
 		}
-		if (sscanf(line, "<String name=\"LastProtocolEventSent\">%[^<]</String>", lastProtocolEventSent) == 1) {
+		if (sscanf(line, "<String name=\"LastProtocolEventSent\">%100[^<]</String>", lastProtocolEventSent) == 1) {
 			sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_2 "Last Event Sent: %s\n", lastProtocolEventSent);
 		}
-		if (sscanf(line, "<String name=\"LastProtocolEventReceived\">%[^<]</String>", lastProtocolEventReceived) == 1) {
+		if (sscanf(line, "<String name=\"LastProtocolEventReceived\">%100[^<]</String>", lastProtocolEventReceived) == 1) {
 			sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_2 "Last Event Received: %s\n", lastProtocolEventReceived);
 		}
 
@@ -464,7 +464,8 @@ void handle_XMLAlarmMessage(constSessionPtr s, devicePtr no_d, constMessagePtr m
  */
 void handle_LocationInfoMessage(constSessionPtr s, devicePtr d, constMessagePtr msg_in)
 {
-	char *xmldata = pbx_strdupa(msg_in->data.LocationInfoMessage.xmldata);
+	char xmldata[sizeof(msg_in->data.LocationInfoMessage.xmldata) + 1];
+	sccp_copy_string(xmldata, msg_in->data.LocationInfoMessage.xmldata, sizeof(xmldata));
 	sccp_log(DEBUGCAT_DEVICE)(VERBOSE_PREFIX_2 "SCCP: LocationInfo (WIFI) Message: %s\n", xmldata);
 	
 	if ((GLOB(debug) & DEBUGCAT_MESSAGE) != 0) {								// only show when debugging messages
@@ -1525,7 +1526,7 @@ void sccp_handle_button_template_req(constSessionPtr s, devicePtr d, constMessag
  */
 void handle_line_number(constSessionPtr s, devicePtr d, constMessagePtr msg_in)
 {
-	sccp_speed_t k;
+	sccp_speed_t k = {0};
 	sccp_buttonconfig_t * config = NULL;
 	uint8_t lineNumber = letohl(msg_in->data.LineStatReqMessage.lel_lineNumber);
 
@@ -1587,7 +1588,7 @@ void handle_line_number(constSessionPtr s, devicePtr d, constMessagePtr msg_in)
  */
 void handle_speed_dial_stat_req(constSessionPtr s, devicePtr d, constMessagePtr msg_in)
 {
-	sccp_speed_t k;
+	sccp_speed_t k = {0};
 	sccp_msg_t *msg_out = NULL;
 
 	int wanted = letohl(msg_in->data.SpeedDialStatReqMessage.lel_speedDialNumber);
@@ -1705,7 +1706,7 @@ static void handle_stimulus_speeddial(constDevicePtr d, constLinePtr l, const ui
 {
 	sccp_log_and((DEBUGCAT_CORE + DEBUGCAT_ACTION)) (VERBOSE_PREFIX_3 "%s: Handle Speeddial Stimulus\n", d->id);
 
-	sccp_speed_t k;
+	sccp_speed_t k = {0};
 
 	sccp_dev_speed_find_byindex(d, instance, FALSE, &k);
 	if (k.valid) {
@@ -1728,7 +1729,7 @@ static void handle_stimulus_blfspeeddial(constDevicePtr d, constLinePtr l, const
 {
 	sccp_log_and((DEBUGCAT_CORE + DEBUGCAT_ACTION)) (VERBOSE_PREFIX_3 "%s: Handle BlfSpeeddial Stimulus\n", d->id);
 
-	sccp_speed_t k;
+	sccp_speed_t k = {0};
 
 	sccp_dev_speed_find_byindex(d, instance, TRUE, &k);
 	if (k.valid) {
@@ -1759,7 +1760,7 @@ static void handle_stimulus_line(constDevicePtr d, constLinePtr l, const uint16_
 
 	/* for 7960's we use line keys to display hinted speeddials (Trick), without a hint it would have been a speeddial */
 	if (!l) {
-		sccp_speed_t k;
+		sccp_speed_t k = {0};
 		//sccp_log((DEBUGCAT_DEVICE + DEBUGCAT_LINE)) (VERBOSE_PREFIX_3 "%s: Handle (BLF) Speeddial Stimulus. Looking for a speeddial-instance:%d with hint\n", d->id, instance);
 		sccp_dev_speed_find_byindex(d, instance, TRUE, &k);
 		if (k.valid) {
@@ -1959,6 +1960,7 @@ static void handle_stimulus_conference(constDevicePtr d, constLinePtr l, const u
 
 	if (channel) {
 		sccp_feat_handle_conference(d, l, instance, channel);
+		return;
 	}
 	pbx_log(LOG_WARNING, "%s: No call to handle conference for on line %d\n", d->id, instance);
 	sccp_dev_starttone(d, SKINNY_TONE_BEEPBONK, 0, 0, SKINNY_TONEDIRECTION_USER);
@@ -2071,10 +2073,13 @@ static void handle_stimulus_groupcallpickup(constDevicePtr d, constLinePtr l, co
 	if (channel) {
 		channel->softswitch_action = SCCP_SOFTSWITCH_DIAL;
 		channel->ss_data = 0;
-		iPbx.getPickupExtension(channel, channel->dialedNumber);
-		sccp_indicate(d, channel, SCCP_CHANNELSTATE_SPEEDDIAL);
-		iPbx.set_callstate(channel, AST_STATE_OFFHOOK);
-		sccp_pbx_softswitch(channel);
+		if (iPbx.getPickupExtension(channel, channel->dialedNumber)) {
+			sccp_indicate(d, channel, SCCP_CHANNELSTATE_SPEEDDIAL);
+			iPbx.set_callstate(channel, AST_STATE_OFFHOOK);
+			sccp_pbx_softswitch(channel);
+		} else {
+			sccp_channel_endcall(channel);
+		}
 	}
 
 	//if (!(channel = sccp_channel_newcall(l, d, "pickupexten", SKINNY_CALLTYPE_OUTBOUND, NULL, NULL))) {
@@ -2170,12 +2175,15 @@ static void handle_feature_action(constDevicePtr d, const int instance, const bo
 				}
 			}
 
-			SCCP_LIST_TRAVERSE(&d->buttonconfig, config, list) {
-				if (config->type == LINE) {
-					AUTO_RELEASE(sccp_line_t, line , sccp_line_find_byname(config->button.line.name, FALSE));
+			{
+				sccp_buttonconfig_t *lineConfig = NULL;
+				SCCP_LIST_TRAVERSE(&d->buttonconfig, lineConfig, list) {
+					if (lineConfig->type == LINE) {
+						AUTO_RELEASE(sccp_line_t, line , sccp_line_find_byname(lineConfig->button.line.name, FALSE));
 
-					if (line) {
-						sccp_line_cfwd(line, d, status, featureOption);
+						if (line) {
+							sccp_line_cfwd(line, d, status, featureOption);
+						}
 					}
 				}
 			}
@@ -2578,6 +2586,9 @@ void handle_capabilities_res(constSessionPtr s, devicePtr d, constMessagePtr msg
 	skinny_codec_t codec = 0;
 
 	uint8_t n = letohl(msg_in->data.CapabilitiesResMessage.lel_count);
+	if (n > SKINNY_MAX_CAPABILITIES) {						/* clamp attacker-controlled count to the array size */
+		n = SKINNY_MAX_CAPABILITIES;
+	}
 
 	sccp_log((DEBUGCAT_CORE + DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: Device has %d Capabilities\n", DEV_ID_LOG(d), n);
 	for(uint i = 0; i < n; i++) {
@@ -3247,7 +3258,7 @@ void handle_soft_key_event(constSessionPtr s, devicePtr d, constMessagePtr msg_i
 	uint32_t lineInstance = letohl(msg_in->data.SoftKeyEventMessage.lel_lineInstance);
 	uint32_t callid = letohl(msg_in->data.SoftKeyEventMessage.lel_callReference);
 
-	if ((int)event - 1 < 0 || (int)event - 1 > (int)ARRAY_LEN(softkeysmap) - 1) {
+	if (event == 0 || event > ARRAY_LEN(softkeysmap)) {
 		pbx_log(LOG_ERROR, "SCCP: Received Softkey Event is out of bounds of softkeysmap (0 < %ld < %ld). Exiting\n", (long)(letohl(msg_in->data.SoftKeyEventMessage.lel_softKeyEvent) - 1), (long)ARRAY_LEN(softkeysmap));
 		return;
 	}
@@ -3456,8 +3467,14 @@ void handle_openReceiveChannelAck(constSessionPtr s, devicePtr d, constMessagePt
 				break;
 		}
 		sccp_rtp_setState(audio, SCCP_RTP_RECEPTION, resultingChannelState);
+	} else if(channel) {
+		/* A late or duplicate ack for a stream that has already been acknowledged. This happens when the
+		 * media destination is updated mid-call: switching to direct rtp sends stop+start before the ack
+		 * of the preceding start has come back. The stream is already running - tearing it down here
+		 * would silence the call. */
+		sccp_log(DEBUGCAT_RTP)(VERBOSE_PREFIX_3 "%s: (openReceiveChannelAck) Ignoring late/duplicate ack for %s, reception is not pending\n", d->id, channel->designator);
 	} else {
-		// we successfully opened receive channel, but have no channel active -> close receive (maybe the call was already (being) terminated)
+		// we have no channel active -> close receive (maybe the call was already (being) terminated)
 		if (mediastatus == SKINNY_MEDIASTATUS_Ok) {
 			callReference = callReference ? callReference : passThruPartyId ^ 0xFFFFFFFF;
 			sccp_msg_t *msg = NULL;
@@ -3519,8 +3536,14 @@ void handle_startMediaTransmissionAck(constSessionPtr s, devicePtr d, constMessa
 				break;
 		}
 		sccp_rtp_setState(audio, SCCP_RTP_TRANSMISSION, resultingChannelState);
+	} else if(channel) {
+		/* A late or duplicate ack for a stream that has already been acknowledged. This happens when the
+		 * media destination is updated mid-call: switching to direct rtp sends stop+start before the ack
+		 * of the preceding start has come back. The stream is already running - tearing it down here
+		 * would silence the call. */
+		sccp_log(DEBUGCAT_RTP)(VERBOSE_PREFIX_3 "%s: (startMediaTransmissionAck) Ignoring late/duplicate ack for %s, transmission is not pending\n", d->id, channel->designator);
 	} else {
-		// we successfully opened receive channel, but have no channel active -> close receive (maybe the call was already (being) terminated)
+		// we have no channel active -> close receive (maybe the call was already (being) terminated)
 		if (mediastatus == SKINNY_MEDIASTATUS_Ok) {
 			callReference = callReference ? callReference : (callReference1 ? callReference1 : passThruPartyId ^ 0xFFFFFFFF);
 			sccp_msg_t *msg = NULL;
@@ -3593,8 +3616,14 @@ void handle_OpenMultiMediaReceiveAck(constSessionPtr s, devicePtr d, constMessag
 				break;
 		}
 		sccp_rtp_setState(video, SCCP_RTP_RECEPTION, resultingChannelState);
+	} else if(channel) {
+		/* A late or duplicate ack for a stream that has already been acknowledged. This happens when the
+		 * media destination is updated mid-call: switching to direct rtp sends stop+start before the ack
+		 * of the preceding start has come back. The stream is already running - tearing it down here
+		 * would silence the call. */
+		sccp_log(DEBUGCAT_RTP)(VERBOSE_PREFIX_3 "%s: (OpenMultiMediaReceiveAck) Ignoring late/duplicate ack for %s, video reception is not pending\n", d->id, channel->designator);
 	} else {
-		// we successfully opened receive channel, but have no channel active -> close receive (maybe the call was already (being) terminated)
+		// we have no channel active -> close receive (maybe the call was already (being) terminated)
 		if (mediastatus == SKINNY_MEDIASTATUS_Ok) {
 			callReference = callReference ? callReference : passThruPartyId ^ 0xFFFFFFFF;
 			sccp_msg_t *msg = NULL;
@@ -3661,8 +3690,14 @@ void handle_startMultiMediaTransmissionAck(constSessionPtr s, devicePtr d, const
 				break;
 		}
 		sccp_rtp_setState(video, SCCP_RTP_TRANSMISSION, resultingChannelState);
+	} else if(channel) {
+		/* A late or duplicate ack for a stream that has already been acknowledged. This happens when the
+		 * media destination is updated mid-call: switching to direct rtp sends stop+start before the ack
+		 * of the preceding start has come back. The stream is already running - tearing it down here
+		 * would silence the call. */
+		sccp_log(DEBUGCAT_RTP)(VERBOSE_PREFIX_3 "%s: (startMultiMediaTransmissionAck) Ignoring late/duplicate ack for %s, video transmission is not pending\n", d->id, channel->designator);
 	} else {
-		// we successfully opened receive channel, but have no channel active -> close receive (maybe the call was already (being) terminated)
+		// we have no channel active -> close receive (maybe the call was already (being) terminated)
 		if (mediastatus == SKINNY_MEDIASTATUS_Ok) {
 			callReference = callReference ? callReference : passThruPartyId ^ 0xFFFFFFFF;
 			sccp_msg_t *msg = NULL;
@@ -3786,11 +3821,11 @@ void handle_ConnectionStatistics(constSessionPtr s, devicePtr device, constMessa
 		// update last_call_statistics
 		sccp_call_statistics_t *call_stats = d->call_statistics;
 
-		if (letohl(msg_in->header.lel_protocolVer < 20)) {
+		if (letohl(msg_in->header.lel_protocolVer) < 20) {
 			call_stats[SCCP_CALLSTATISTIC_LAST].num = letohl(msg_in->data.ConnectionStatisticsRes.v3.lel_CallIdentifier);
 			call_stats[SCCP_CALLSTATISTIC_LAST].packets_sent = letohl(msg_in->data.ConnectionStatisticsRes.v3.lel_SentPackets);
 			call_stats[SCCP_CALLSTATISTIC_LAST].packets_received = letohl(msg_in->data.ConnectionStatisticsRes.v3.lel_RecvdPackets);
-			call_stats[SCCP_CALLSTATISTIC_LAST].packets_lost = letohl(msg_in->data.ConnectionStatisticsRes.v3.lel_LostPkts);
+			call_stats[SCCP_CALLSTATISTIC_LAST].packets_lost = (int32_t)letohl(msg_in->data.ConnectionStatisticsRes.v3.lel_LostPkts);
 			call_stats[SCCP_CALLSTATISTIC_LAST].jitter = letohl(msg_in->data.ConnectionStatisticsRes.v3.lel_Jitter);
 			call_stats[SCCP_CALLSTATISTIC_LAST].latency = letohl(msg_in->data.ConnectionStatisticsRes.v3.lel_latency);
 			QualityStatsSize = letohl(msg_in->data.ConnectionStatisticsRes.v3.lel_QualityStatsSize) + 1;
@@ -3798,11 +3833,11 @@ void handle_ConnectionStatistics(constSessionPtr s, devicePtr device, constMessa
 			if (QualityStatsSize) {
 				sccp_copy_string(QualityStats, msg_in->data.ConnectionStatisticsRes.v3.QualityStats, QualityStatsSize);
 			}
-		} else if (letohl(msg_in->header.lel_protocolVer < 22)) {
+		} else if (letohl(msg_in->header.lel_protocolVer) < 22) {
 			call_stats[SCCP_CALLSTATISTIC_LAST].num = letohl(msg_in->data.ConnectionStatisticsRes.v20.lel_CallIdentifier);
 			call_stats[SCCP_CALLSTATISTIC_LAST].packets_sent = letohl(msg_in->data.ConnectionStatisticsRes.v20.lel_SentPackets);
 			call_stats[SCCP_CALLSTATISTIC_LAST].packets_received = letohl(msg_in->data.ConnectionStatisticsRes.v20.lel_RecvdPackets);
-			call_stats[SCCP_CALLSTATISTIC_LAST].packets_lost = letohl(msg_in->data.ConnectionStatisticsRes.v20.lel_LostPkts);
+			call_stats[SCCP_CALLSTATISTIC_LAST].packets_lost = (int32_t)letohl(msg_in->data.ConnectionStatisticsRes.v20.lel_LostPkts);
 			call_stats[SCCP_CALLSTATISTIC_LAST].jitter = letohl(msg_in->data.ConnectionStatisticsRes.v20.lel_Jitter);
 			call_stats[SCCP_CALLSTATISTIC_LAST].latency = letohl(msg_in->data.ConnectionStatisticsRes.v20.lel_latency);
 			QualityStatsSize = letohl(msg_in->data.ConnectionStatisticsRes.v20.lel_QualityStatsSize) + 1;
@@ -3816,7 +3851,7 @@ void handle_ConnectionStatistics(constSessionPtr s, devicePtr device, constMessa
 			call_stats[SCCP_CALLSTATISTIC_LAST].num = letohl(get_unaligned_uint32((const void *) &msg_in->data.ConnectionStatisticsRes.v22.lel_CallIdentifier));
 			call_stats[SCCP_CALLSTATISTIC_LAST].packets_sent = letohl(get_unaligned_uint32((const void *) &msg_in->data.ConnectionStatisticsRes.v22.lel_SentPackets));
 			call_stats[SCCP_CALLSTATISTIC_LAST].packets_received = letohl(get_unaligned_uint32((const void *) &msg_in->data.ConnectionStatisticsRes.v22.lel_RecvdPackets));
-			call_stats[SCCP_CALLSTATISTIC_LAST].packets_lost = letohl(get_unaligned_uint32((const void *) &msg_in->data.ConnectionStatisticsRes.v22.lel_LostPkts));
+			call_stats[SCCP_CALLSTATISTIC_LAST].packets_lost = (int32_t)letohl(get_unaligned_uint32((const void *) &msg_in->data.ConnectionStatisticsRes.v22.lel_LostPkts));
 			call_stats[SCCP_CALLSTATISTIC_LAST].jitter = letohl(get_unaligned_uint32((const void *) &msg_in->data.ConnectionStatisticsRes.v22.lel_Jitter));
 			call_stats[SCCP_CALLSTATISTIC_LAST].latency = letohl(get_unaligned_uint32((const void *) &msg_in->data.ConnectionStatisticsRes.v22.lel_latency));
 			QualityStatsSize = letohl(get_unaligned_uint32((const void *) &msg_in->data.ConnectionStatisticsRes.v22.lel_QualityStatsSize));
@@ -3824,7 +3859,7 @@ void handle_ConnectionStatistics(constSessionPtr s, devicePtr device, constMessa
 			call_stats[SCCP_CALLSTATISTIC_LAST].num = letohl(msg_in->data.ConnectionStatisticsRes.v22.lel_CallIdentifier);
 			call_stats[SCCP_CALLSTATISTIC_LAST].packets_sent = letohl(msg_in->data.ConnectionStatisticsRes.v22.lel_SentPackets);
 			call_stats[SCCP_CALLSTATISTIC_LAST].packets_received = letohl(msg_in->data.ConnectionStatisticsRes.v22.lel_RecvdPackets);
-			call_stats[SCCP_CALLSTATISTIC_LAST].packets_lost = letohl(msg_in->data.ConnectionStatisticsRes.v22.lel_LostPkts);
+			call_stats[SCCP_CALLSTATISTIC_LAST].packets_lost = (int32_t)letohl(msg_in->data.ConnectionStatisticsRes.v22.lel_LostPkts);
 			call_stats[SCCP_CALLSTATISTIC_LAST].jitter = letohl(msg_in->data.ConnectionStatisticsRes.v22.lel_Jitter);
 			call_stats[SCCP_CALLSTATISTIC_LAST].latency = letohl(msg_in->data.ConnectionStatisticsRes.v22.lel_latency);
 			QualityStatsSize = letohl(msg_in->data.ConnectionStatisticsRes.v22.lel_QualityStatsSize) + 1;
@@ -3840,12 +3875,12 @@ void handle_ConnectionStatistics(constSessionPtr s, devicePtr device, constMessa
 		pbx_str_append(&output_buf, buffersize, "         Last Call        : CallID: %d Packets sent: %d rcvd: %d lost: %d jitter: %d latency: %d\n", call_stats[SCCP_CALLSTATISTIC_LAST].num, call_stats[SCCP_CALLSTATISTIC_LAST].packets_sent, call_stats[SCCP_CALLSTATISTIC_LAST].packets_received, call_stats[SCCP_CALLSTATISTIC_LAST].packets_lost, call_stats[SCCP_CALLSTATISTIC_LAST].jitter, call_stats[SCCP_CALLSTATISTIC_LAST].latency);
 		sccp_log(DEBUGCAT_CORE) (VERBOSE_PREFIX_3 "QualityStats: %s\n", QualityStats);
 		if (!sccp_strlen_zero(QualityStats)) {
-			if (letohl(msg_in->header.lel_protocolVer < 20)) {
+			if (letohl(msg_in->header.lel_protocolVer) < 20) {
 				sscanf(QualityStats, "MLQK=%f;MLQKav=%f;MLQKmn=%f;MLQKmx=%f;MLQKvr=%f;CCR=%f;ICR=%f;ICRmx=%f;CS=%d;SCS=%d",
 				       &call_stats[SCCP_CALLSTATISTIC_LAST].opinion_score_listening_quality, &call_stats[SCCP_CALLSTATISTIC_LAST].avg_opinion_score_listening_quality,
 				       &call_stats[SCCP_CALLSTATISTIC_LAST].mean_opinion_score_listening_quality, &call_stats[SCCP_CALLSTATISTIC_LAST].max_opinion_score_listening_quality,
 				       &call_stats[SCCP_CALLSTATISTIC_LAST].variance_opinion_score_listening_quality, &call_stats[SCCP_CALLSTATISTIC_LAST].cumulative_concealement_ratio, &call_stats[SCCP_CALLSTATISTIC_LAST].interval_concealement_ratio, &call_stats[SCCP_CALLSTATISTIC_LAST].max_concealement_ratio, &call_stats[SCCP_CALLSTATISTIC_LAST].concealed_seconds, &call_stats[SCCP_CALLSTATISTIC_LAST].severely_concealed_seconds);
-			} else if (letohl(msg_in->header.lel_protocolVer < 22)) {
+			} else if (letohl(msg_in->header.lel_protocolVer) < 22) {
 				int Log = 0;
 
 				sscanf(QualityStats, "Log %d: mos %f, avgMos %f, maxMos %f, minMos %f, CS %d, SCS %d, CCR %f, ICR %f, maxCR %f",
@@ -3868,7 +3903,7 @@ void handle_ConnectionStatistics(constSessionPtr s, devicePtr device, constMessa
 		// update avg_call_statistics
 		call_stats[SCCP_CALLSTATISTIC_AVG].packets_sent = CALC_AVG(call_stats[SCCP_CALLSTATISTIC_LAST].packets_sent, call_stats[SCCP_CALLSTATISTIC_AVG].packets_sent, call_stats[SCCP_CALLSTATISTIC_AVG].num);
 		call_stats[SCCP_CALLSTATISTIC_AVG].packets_received = CALC_AVG(call_stats[SCCP_CALLSTATISTIC_LAST].packets_received, call_stats[SCCP_CALLSTATISTIC_AVG].packets_received, call_stats[SCCP_CALLSTATISTIC_AVG].num);
-		call_stats[SCCP_CALLSTATISTIC_AVG].packets_lost = CALC_AVG(call_stats[SCCP_CALLSTATISTIC_LAST].packets_lost, call_stats[SCCP_CALLSTATISTIC_AVG].packets_lost, call_stats[SCCP_CALLSTATISTIC_AVG].num);
+		call_stats[SCCP_CALLSTATISTIC_AVG].packets_lost = CALC_AVG(call_stats[SCCP_CALLSTATISTIC_LAST].packets_lost, call_stats[SCCP_CALLSTATISTIC_AVG].packets_lost, (int32_t)call_stats[SCCP_CALLSTATISTIC_AVG].num);
 		call_stats[SCCP_CALLSTATISTIC_AVG].jitter = CALC_AVG(call_stats[SCCP_CALLSTATISTIC_LAST].jitter, call_stats[SCCP_CALLSTATISTIC_AVG].jitter, call_stats[SCCP_CALLSTATISTIC_AVG].num);
 		call_stats[SCCP_CALLSTATISTIC_AVG].latency = CALC_AVG(call_stats[SCCP_CALLSTATISTIC_LAST].latency, call_stats[SCCP_CALLSTATISTIC_AVG].latency, call_stats[SCCP_CALLSTATISTIC_AVG].num);
 		call_stats[SCCP_CALLSTATISTIC_AVG].opinion_score_listening_quality = CALC_AVG(call_stats[SCCP_CALLSTATISTIC_LAST].opinion_score_listening_quality, call_stats[SCCP_CALLSTATISTIC_AVG].opinion_score_listening_quality, call_stats[SCCP_CALLSTATISTIC_AVG].num);
@@ -4086,7 +4121,7 @@ void handle_feature_stat_req(constSessionPtr s, devicePtr d, constMessagePtr msg
 	 * the new speeddial style uses feature to display state
 	 * unfortunately we dont know how to handle this on non-dynamic phones
 	 */
-	sccp_speed_t k;
+	sccp_speed_t k = {0};
 
 	if ((capabilities == 1 && d->inuseprotocolversion >= 15)) {
 		sccp_dev_speed_find_byindex(d, featureIndex, TRUE, &k);
@@ -4139,9 +4174,9 @@ void handle_services_stat_req(constSessionPtr s, devicePtr d, constMessagePtr ms
 				return;
 			}
 			msg_out->data.ServiceURLStatMessage.lel_serviceURLIndex = htolel(urlIndex);
-			sccp_copy_string(msg_out->data.ServiceURLStatMessage.URL, config->button.service.url, sccp_strlen(config->button.service.url) + 1);
+			sccp_copy_string(msg_out->data.ServiceURLStatMessage.URL, config->button.service.url, sizeof(msg_out->data.ServiceURLStatMessage.URL));
 			//sccp_copy_string(msg_out->data.ServiceURLStatMessage.label, config->label, sccp_strlen(config->label) + 1);
-			d->copyStr2Locale(d, msg_out->data.ServiceURLStatMessage.label, config->label, sccp_strlen(config->label) + 1);
+			d->copyStr2Locale(d, msg_out->data.ServiceURLStatMessage.label, config->label, sizeof(msg_out->data.ServiceURLStatMessage.label));
 		} else {
 			int URL_len = sccp_strlen(config->button.service.url);
 			int label_len = sccp_strlen(config->label);
@@ -4628,6 +4663,7 @@ void handle_extension_devicecaps(constSessionPtr s, devicePtr d, constMessagePtr
 		sccp_addon_t *addon = (sccp_addon_t *)sccp_calloc(1, sizeof(sccp_addon_t));
 		if (!addon) {
 			pbx_log(LOG_ERROR, SS_Memory_Allocation_Error, "SCCP");
+			SCCP_LIST_UNLOCK(&d->addons);
 			return;
 		}
 		addon->type = SKINNY_DEVICETYPE_UNDEFINED;
@@ -4679,6 +4715,9 @@ void handle_device_to_user(constSessionPtr s, devicePtr d, constMessagePtr msg_i
 
 	dataLength = letohl(msg_in->data.DeviceToUserDataVersion1Message.lel_dataLength);
 	if (dataLength) {
+		if (dataLength >= sizeof(data)) {						/* clamp attacker-controlled length to the buffer */
+			dataLength = sizeof(data) - 1;
+		}
 		memset(data, 0, dataLength);
 		memcpy(data, msg_in->data.DeviceToUserDataVersion1Message.data, dataLength);
 	}
@@ -4691,6 +4730,9 @@ void handle_device_to_user(constSessionPtr s, devicePtr d, constMessagePtr msg_i
 			char str_transactionID[11] = "";
 			if (sscanf(data, "%10[^/]/%10s", str_action, str_transactionID) > 0) {
 				sccp_log((DEBUGCAT_CONFERENCE + DEBUGCAT_MESSAGE + DEBUGCAT_ACTION)) (VERBOSE_PREFIX_3 "%s: Handle DTU Softkey Button:%s, %s\n", d->id, str_action, str_transactionID);
+				if (d->dtu_softkey.action) {
+					sccp_free(d->dtu_softkey.action);
+				}
 				d->dtu_softkey.action = pbx_strdup(str_action);
 				d->dtu_softkey.transactionID = sccp_atoi(str_transactionID, sizeof(str_transactionID));
 			} else {
@@ -4761,6 +4803,9 @@ void handle_device_to_user_response(constSessionPtr s, devicePtr d, constMessage
 		dataLength = letohl(msg_in->data.DeviceToUserDataVersion1Message.lel_dataLength) + 1;
 
 		if (dataLength) {
+			if (dataLength > sizeof(data)) {					/* clamp attacker-controlled length to the buffer */
+				dataLength = sizeof(data);
+			}
 			sccp_copy_string(data, msg_in->data.DeviceToUserDataVersion1Message.data, dataLength);
 		}
 
@@ -4833,7 +4878,7 @@ void handle_miscellaneousCommandMessage(constSessionPtr s, devicePtr d, constMes
 					sccp_log((DEBUGCAT_RTP)) (VERBOSE_PREFIX_3 "%s: recoveryReferencePicture, pictureCount:%d\n",
 								  channel ? channel->currentDeviceId : "--",
 								  pictureCount);
-					for (curPic = 0; curPic < pictureCount; curPic++) {
+					for (curPic = 0; curPic < pictureCount && curPic < (int)ARRAY_LEN(msg_in->data.MiscellaneousCommandMessage.data.recoveryReferencePicture.pictureReference); curPic++) {
 						sccp_log((DEBUGCAT_RTP)) (VERBOSE_PREFIX_3 "%s: recoveryReferencePicture[%d], pictureNumber %d, longTermPictureIndex %d\n",
 									channel ? channel->currentDeviceId : "--", curPic,
 									letohl(msg_in->data.MiscellaneousCommandMessage.data.recoveryReferencePicture.pictureReference[curPic].lel_pictureNumber),
