@@ -61,6 +61,7 @@ void sccp_session_crossdevice_cleanup(constSessionPtr current_session, sessionPt
 SCCP_API boolean_t SCCP_CALL sccp_session_check_crossdevice(constSessionPtr session, constDevicePtr device);
 SCCP_API devicePtr SCCP_CALL sccp_session_getDevice(constSessionPtr session, boolean_t required);
 SCCP_API boolean_t SCCP_CALL sccp_session_isValid(constSessionPtr session);
+SCCP_API boolean_t SCCP_CALL sccp_session_isAlive(constSessionPtr session);
 SCCP_API int SCCP_CALL sccp_cli_show_sessions(int fd, sccp_cli_totals_t *totals, struct mansession *s, const struct message *m, int argc, char *argv[]);
 
 SCCP_API boolean_t SCCP_CALL sccp_session_bind_and_listen(sccp_servercontext_t * context, struct sockaddr_storage * bindaddr);

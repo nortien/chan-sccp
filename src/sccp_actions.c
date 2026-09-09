@@ -511,6 +511,11 @@ void handle_token_request(constSessionPtr s, devicePtr no_d, constMessagePtr msg
 		if (sccp_false(GLOB(token_fallback))) {
 			sccp_log_and((DEBUGCAT_ACTION + DEBUGCAT_CORE)) (VERBOSE_PREFIX_2 "%s: Sending phone a token rejection (sccp.conf:fallback=%s)\n", deviceName, GLOB(token_fallback));
 			sccp_session_tokenReject(s, token_backoff_time);
+			/* This server has declined the token, so it is done with this request.
+			 * Without the return it went on to the session handling below, which can
+			 * send a second rejection for the same request and tear a session down
+			 * after already refusing to serve it. */
+			return;
 		}
 	}
 	if (!skinny_devicetype_exists(deviceType)) {
@@ -523,11 +528,35 @@ void handle_token_request(constSessionPtr s, devicePtr no_d, constMessagePtr msg
 		AUTO_RELEASE(sccp_device_t, tmpdevice , sccp_device_find_byid(deviceName, FALSE));
 		if (tmpdevice) {
 			skinny_registrationstate_t state = sccp_device_getRegistrationState(tmpdevice);
-			if (state == SKINNY_DEVICE_RS_TOKEN && tmpdevice->registrationTime < time(0) + token_backoff_time) {
+			if (state == SKINNY_DEVICE_RS_TOKEN && time(0) - tmpdevice->registrationTime < token_backoff_time) {
 				pbx_log(LOG_NOTICE, "%s: Token already sent, giving up (regState: %s, tokenState:%s, registrationTime:%d)\n", deviceName, skinny_registrationstate2str(state),
 					sccp_tokenstate2str(tmpdevice->status.token), (int)(tmpdevice->registrationTime));
 				tmpdevice->registrationTime = time(0);
 				sccp_session_tokenReject(s, token_backoff_time);
+				return;
+			}
+			/* A phone that is registered and still talking to us does not have to lose
+			 * its session, and every call on it, just to have a token request answered.
+			 * The handler's own documentation describes a periodic token refresh as
+			 * normal behaviour, and a phone that refreshes while up landed straight in
+			 * the crossover cleanup below, which tears the working session down.
+			 * Reproduced on the stand with fallback=true: a fully registered device went
+			 * from RegState OK with one session to RegState None with none, on a single
+			 * token request from a second connection.
+			 *
+			 * The liveness test is what keeps this safe for the case the cleanup exists
+			 * for. A phone that was unplugged leaves an open socket behind, and that
+			 * session is not alive by this measure, so it is still cleaned up as before.
+			 * Only a session we have heard from inside its keepalive window is defended,
+			 * and the new connection is told to come back after the backoff.
+			 *
+			 * s->device is still NULL here, so stopping this session cannot disturb the
+			 * registered device's own state. */
+			if(tmpdevice->session && tmpdevice->session != s && state == SKINNY_DEVICE_RS_OK && sccp_session_isAlive(tmpdevice->session)) {
+				pbx_log(LOG_NOTICE, "%s: Device is registered and its session is alive; rejecting this token instead of replacing the session\n", deviceName);
+				tmpdevice->registrationTime = time(0);
+				sccp_session_tokenReject(s, token_backoff_time);
+				sccp_session_stopthread(s, SKINNY_DEVICE_RS_FAILED);
 				return;
 			}
 			if (sccp_session_check_crossdevice(s, tmpdevice) || (state != SKINNY_DEVICE_RS_FAILED && state != SKINNY_DEVICE_RS_NONE)) {
@@ -580,7 +609,13 @@ void handle_token_request(constSessionPtr s, devicePtr no_d, constMessagePtr msg
 
 	/* accepting token by default */
 	boolean_t sendAck = TRUE;
-	int last_digit = deviceName[strlen(deviceName)];
+	/* Last character of the device name, whose parity splits the devices between
+	 * the members of an active/active cluster (fallback=odd on one, even on the
+	 * other). This indexed deviceName[strlen(deviceName)], which is the NUL
+	 * terminator, so the value was always 0 and both branches below compared a
+	 * constant. ASCII keeps digit parity, so the character value can be used as is. */
+	size_t deviceNameLen = strlen(deviceName);
+	int last_digit = deviceNameLen ? deviceName[deviceNameLen - 1] : 0;
 	if (!sccp_strlen_zero(GLOB(token_fallback))) {
 		if (sccp_false(GLOB(token_fallback))) {
 			sendAck = FALSE;
@@ -590,13 +625,12 @@ void handle_token_request(constSessionPtr s, devicePtr no_d, constMessagePtr msg
 				sendAck = TRUE;
 			}
 		} else if (!strcasecmp("odd", GLOB(token_fallback))) {
-			if (last_digit % 2 != 0) {
-				sendAck = TRUE;
-			}
+			/* Assigned both ways. These branches only ever raised sendAck, which is
+			 * already the default, so this server acknowledged every device and the
+			 * cluster never split: fallback=odd and fallback=even behaved alike. */
+			sendAck = (last_digit % 2 != 0);
 		} else if (!strcasecmp("even", GLOB(token_fallback))) {
-			if (last_digit % 2 == 0) {
-				sendAck = TRUE;
-			}
+			sendAck = (last_digit % 2 == 0);
 		} else if (strstr(GLOB(token_fallback), "/") != NULL) {
 			struct stat sb = { 0 };
 			if (stat(GLOB(token_fallback), &sb) == 0 && sb.st_mode & S_IXUSR) {
@@ -613,7 +647,17 @@ void handle_token_request(constSessionPtr s, devicePtr no_d, constMessagePtr msg
 				pp = popen(command, "r");
 				if (pp != NULL) {
 					while (fgets(buff, sizeof(buff) - 1, pp)) {
-						snprintf(output + strlen(output), sizeof(output) - 1, "%s", buff);
+						/* The size argument has to be what is LEFT in output, not the
+						 * whole buffer. It passed sizeof(output) - 1 while writing at
+						 * output + strlen(output), so from the second line onwards
+						 * snprintf was told it had 20 bytes at an offset already up to
+						 * 19 bytes into a 21-byte stack buffer, and a fallback script
+						 * printing more than one line wrote past the end of it. */
+						size_t used = strlen(output);
+						if (used >= sizeof(output) - 1) {
+							break;
+						}
+						snprintf(output + used, sizeof(output) - used, "%s", buff);
 					}
 					pclose(pp);
 					sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "%s: (token_request), script result='%s'\n", deviceName, (char *) output);
@@ -711,11 +755,21 @@ void handle_SPCPTokenReq(constSessionPtr s, devicePtr no_d, constMessagePtr msg_
 		AUTO_RELEASE(sccp_device_t, tmpdevice , sccp_device_find_byid(deviceName, FALSE));
 		if (tmpdevice) {
 			skinny_registrationstate_t state = sccp_device_getRegistrationState(tmpdevice);
-			if (state == SKINNY_DEVICE_RS_TOKEN && tmpdevice->registrationTime < time(0) + token_backoff_time) {
+			if (state == SKINNY_DEVICE_RS_TOKEN && time(0) - tmpdevice->registrationTime < token_backoff_time) {
 				pbx_log(LOG_NOTICE, "%s: Token already sent, giving up (regState: %s, tokenState:%s, registrationTime:%d)\n", deviceName, skinny_registrationstate2str(state),
 					sccp_tokenstate2str(tmpdevice->status.token), (int)(tmpdevice->registrationTime - time(0)));
 				tmpdevice->registrationTime = time(0);
 				sccp_session_tokenReject(s, token_backoff_time);
+				return;
+			}
+			/* Same protection as the SCCP handler above, and this is the path that
+			 * matters most for it: the SPA phones in upstream reports 517, 591 and 492
+			 * speak SPCP, and they refresh their token while registered and on a call. */
+			if(tmpdevice->session && tmpdevice->session != s && state == SKINNY_DEVICE_RS_OK && sccp_session_isAlive(tmpdevice->session)) {
+				pbx_log(LOG_NOTICE, "%s: Device is registered and its session is alive; rejecting this token instead of replacing the session\n", deviceName);
+				tmpdevice->registrationTime = time(0);
+				sccp_session_tokenRejectSPCP(s, token_backoff_time);
+				sccp_session_stopthread(s, SKINNY_DEVICE_RS_FAILED);
 				return;
 			}
 			if (sccp_session_check_crossdevice(s, tmpdevice) || (state != SKINNY_DEVICE_RS_FAILED && state != SKINNY_DEVICE_RS_NONE)) {

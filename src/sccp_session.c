@@ -1532,6 +1532,28 @@ boolean_t sccp_session_isValid(constSessionPtr session)
 	return FALSE;
 }
 
+/*!
+ * \brief Is this session still being talked to?
+ *
+ * Stronger than sccp_session_isValid(), which only says the socket is open and the
+ * session is not shutting down. A phone that has been unplugged leaves exactly such a
+ * session behind until the keepalive timeout reaps it, so callers that must tell a
+ * working session from an abandoned one need the traffic test as well.
+ *
+ * \param session SCCP session
+ * \return TRUE when the far end has been heard from inside the keepalive window
+ */
+boolean_t sccp_session_isAlive(constSessionPtr session)
+{
+	if(!sccp_session_isValid(session)) {
+		return FALSE;
+	}
+	/* Anything arriving on the socket refreshes lastKeepAlive, not just keepalives.
+	 * Half a window of slack, because a phone is allowed to be a little late. */
+	uint16_t window = session->keepAlive ? session->keepAlive : (GLOB(keepalive) ? GLOB(keepalive) : SCCP_MIN_KEEPALIVE);
+	return (time(0) - session->lastKeepAlive) < (time_t)(window + (window / 2));
+}
+
 /* -------------------------------------------------------------------------------------------------------SHOW SESSIONS- */
 /*!
  * \brief Show Sessions
