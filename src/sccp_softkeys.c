@@ -528,6 +528,15 @@ static void sccp_sk_dirtrfr(const sccp_softkeyMap_cb_t * const softkeyMap_cb, co
 			sccp_log((DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_3 "%s: (sccp_sk_dirtrfr) Resumed Second Channel (%d)\n", DEV_ID_LOG(device), chan2->state);
 		}
 		sccp_log((DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_3 "%s: (sccp_sk_dirtrfr) First Channel Status (%d), Second Channel Status (%d)\n", DEV_ID_LOG(device), chan1->state, chan2->state);
+		/* Release whatever is already staged before overwriting it. Pressing this key
+		 * while a transfer is set up replaced both pointers without releasing them,
+		 * so each press leaked two channel references. */
+		if (device->transferChannels.transferee) {
+			sccp_channel_release(&device->transferChannels.transferee);
+		}
+		if (device->transferChannels.transferer) {
+			sccp_channel_release(&device->transferChannels.transferer);
+		}
 		device->transferChannels.transferee = sccp_channel_retain(chan1);
 		device->transferChannels.transferer = sccp_channel_retain(chan2);
 		if (device->transferChannels.transferee && device->transferChannels.transferer) {

@@ -462,6 +462,7 @@ static void sccp_channel_recalculateAudioCodecFormat(channelPtr channel)
 	char s4[512];
 	skinny_codec_t joint = channel->rtp.audio.reception.format;
 	skinny_capabilities_t *preferences = &(channel->preferences);
+	skinny_capabilities_t device_preferences = { { SKINNY_CODEC_NONE } };
 	sccp_rtp_t * audio = (sccp_rtp_t *)&(channel->rtp.audio);
 
 	if(iPbx.retrieve_remote_capabilities && channel->remoteCapabilities.audio[0] == SKINNY_CODEC_NONE) {
@@ -469,7 +470,16 @@ static void sccp_channel_recalculateAudioCodecFormat(channelPtr channel)
 	}
 	if(sccp_rtp_areBothInvalid(audio)) {
 		if(channel->privateData->device && !channel->line->preferences_set_on_line_level) {
-			preferences = &(channel->privateData->device->preferences);
+			/* Work on a copy. This pointed straight at the device's configured
+			 * preference list, and the reduction below narrows it by THIS call's
+			 * capabilities, writing the result back through the pointer. The device's
+			 * configuration was therefore permanently narrowed by every call it took,
+			 * and since each call can present a different set the list erodes toward
+			 * empty. An empty list then falls to the wideband default a few lines
+			 * down, so a device that has been up for a while stops negotiating the
+			 * codecs it is configured for. */
+			memcpy(&device_preferences, &channel->privateData->device->preferences, sizeof(device_preferences));
+			preferences = &device_preferences;
 			sccp_codec_reduceSet(preferences->audio, channel->privateData->device->capabilities.audio);
 		}
 		sccp_codec_reduceSet(preferences->audio, channel->capabilities.audio);
@@ -519,11 +529,16 @@ static boolean_t sccp_channel_recalculateVideoCodecFormat(channelPtr channel)
 	char s4[512];
 	skinny_codec_t joint = channel->rtp.video.reception.format;
 	skinny_capabilities_t *preferences = &(channel->preferences);
+	skinny_capabilities_t device_preferences = { { SKINNY_CODEC_NONE } };
 	sccp_rtp_t * video = (sccp_rtp_t *)&(channel->rtp.video);
 
 	if(sccp_rtp_areBothInvalid(video)) {
 		if(channel->privateData->device && !channel->line->preferences_set_on_line_level) {
-			preferences = &(channel->privateData->device->preferences);
+			/* Copy, for the same reason as the audio path above: the reduction writes
+			 * through this pointer and would otherwise narrow the device's configured
+			 * preference list by each individual call. */
+			memcpy(&device_preferences, &channel->privateData->device->preferences, sizeof(device_preferences));
+			preferences = &device_preferences;
 			sccp_codec_reduceSet(preferences->video, channel->privateData->device->capabilities.video);
 		}
 		sccp_codec_reduceSet(preferences->video, channel->capabilities.video);
@@ -1777,6 +1792,16 @@ PBX_CHANNEL_TYPE * sccp_channel_lock_full(channelPtr c, boolean_t retry_indefini
 		sccp_channel_unlock(c);
 		pbx_channel_unlock(pbx_channel);
 		pbx_channel_unref(pbx_channel);
+		if(!retry_indefinitely) {
+			/* Caller asked us not to retry, so this is a failure and has to be
+			 * reported as one. Falling out of the loop here returned the pbx_channel
+			 * that was just unlocked and unreferenced, while the comment below
+			 * promises the opposite, so the caller went on to use it and then
+			 * released it a second time. Report NULL with c locked, which is the
+			 * same contract as the other failure exit above. */
+			sccp_channel_lock(c);
+			return NULL;
+		}
 	} while(retry_indefinitely);
 
 	/* If owner exists, it is locked and reffed */
@@ -2573,16 +2598,21 @@ void sccp_channel_transfer_release(devicePtr d, channelPtr c)
 		return;
 	}
 
+	/* Written before the releases below, not after. The only caller passes the
+	 * transferee itself, so the release can drop its last reference and free the
+	 * channel; writing to it afterwards then touches freed memory. It survives today
+	 * only because the line's channel list happens to still hold a reference. */
+	c->channelStateReason = SCCP_CHANNELSTATEREASON_NORMAL;
+
 	if ((d->transferChannels.transferee && c == d->transferChannels.transferee) || (d->transferChannels.transferer && c == d->transferChannels.transferer)) {
+		sccp_log_and((DEBUGCAT_CHANNEL + DEBUGCAT_HIGH)) (VERBOSE_PREFIX_3 "%s: Transfer on the channel %s released\n", d->id, c->designator);
 		if (d->transferChannels.transferee) {
 			sccp_channel_release(&d->transferChannels.transferee);					/* explicit release */
 		}
 		if (d->transferChannels.transferer) {
 			sccp_channel_release(&d->transferChannels.transferer);					/* explicit release */
 		}
-		sccp_log_and((DEBUGCAT_CHANNEL + DEBUGCAT_HIGH)) (VERBOSE_PREFIX_3 "%s: Transfer on the channel %s released\n", d->id, c->designator);
 	}
-	c->channelStateReason = SCCP_CHANNELSTATEREASON_NORMAL;
 }
 
 /*!
@@ -2658,7 +2688,17 @@ void sccp_channel_transfer_complete(channelPtr sccp_destination_local_channel)
 	sccp_log((DEBUGCAT_CHANNEL + DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "%s: Complete transfer from %s\n", d->id, sccp_destination_local_channel->designator);
 	instance = sccp_device_find_index_for_line(d, sccp_destination_local_channel->line->name);
 
-	if (sccp_destination_local_channel->state != SCCP_CHANNELSTATE_RINGOUT && sccp_destination_local_channel->state != SCCP_CHANNELSTATE_CONNECTED && sccp_destination_local_channel->state != SCCP_CHANNELSTATE_PROGRESS) {
+	/* RINGOUT_ALERTING belongs in this set. The consultation leg moves itself from
+	 * RINGOUT to RINGOUT_ALERTING from the Asterisk thread the moment the destination
+	 * sends a connected line update while still ringing, and the keyset installed by
+	 * RINGOUT stays in force, so the phone goes on offering Transfer. Pressing it then
+	 * hit this gate and the transfer was refused because of a state this driver had
+	 * set itself. Whether it happened depended on whether that update arrived before
+	 * the keypress, which is what made it look intermittent. The refusal also left
+	 * d->transferChannels populated, so the next hangup reported the transferee as
+	 * denied. */
+	if (sccp_destination_local_channel->state != SCCP_CHANNELSTATE_RINGOUT && sccp_destination_local_channel->state != SCCP_CHANNELSTATE_RINGOUT_ALERTING &&
+	    sccp_destination_local_channel->state != SCCP_CHANNELSTATE_CONNECTED && sccp_destination_local_channel->state != SCCP_CHANNELSTATE_PROGRESS) {
 		pbx_log(LOG_WARNING, "SCCP: Failed to complete transfer. The channel is not ringing or connected. ChannelState: %s (%d)\n", sccp_channelstate2str(sccp_destination_local_channel->state), sccp_destination_local_channel->state);
 		goto EXIT;
 	}
@@ -2691,7 +2731,10 @@ void sccp_channel_transfer_complete(channelPtr sccp_destination_local_channel)
 	}
 
 	{
-		int connectedLineUpdateReason = (sccp_destination_local_channel->state == SCCP_CHANNELSTATE_RINGOUT) ? AST_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER_ALERTING : AST_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER;
+		/* Alerting covers both ringing states, otherwise a destination that is still
+		 * ringing is announced to the transferee as though it had answered. */
+		int connectedLineUpdateReason = (sccp_destination_local_channel->state == SCCP_CHANNELSTATE_RINGOUT || sccp_destination_local_channel->state == SCCP_CHANNELSTATE_RINGOUT_ALERTING)
+			? AST_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER_ALERTING : AST_CONNECTED_LINE_UPDATE_SOURCE_TRANSFER;
 
 		char calling_number[StationMaxDirnumSize] = { 0 };
 
@@ -2754,7 +2797,9 @@ void sccp_channel_transfer_complete(channelPtr sccp_destination_local_channel)
 #endif
 	}
 
-	if (sccp_destination_local_channel->state == SCCP_CHANNELSTATE_RINGOUT) {
+	/* Both ringing states, so a transfer completed once the destination has started
+	 * alerting still gives the held party ringback instead of silence. */
+	if (sccp_destination_local_channel->state == SCCP_CHANNELSTATE_RINGOUT || sccp_destination_local_channel->state == SCCP_CHANNELSTATE_RINGOUT_ALERTING) {
 		sccp_log((DEBUGCAT_CHANNEL + DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "%s: Blind transfer. Signalling ringing state to %s\n", d->id, pbx_channel_name(pbx_source_remote_channel));
 		pbx_indicate(pbx_source_remote_channel, AST_CONTROL_RINGING);					// Shouldn't this be ALERTING?
 

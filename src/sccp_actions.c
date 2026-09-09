@@ -1980,6 +1980,10 @@ static void handle_stimulus_transfer(constDevicePtr d, constLinePtr l, const uin
 
 	if (channel) {
 		sccp_channel_transfer(channel, d);
+		/* The warning and the error tone below are the no-call-found case. Without
+		 * this return they ran after a perfectly good transfer too, so every press of
+		 * the hard Transfer key answered with an error beep and logged a warning. */
+		return;
 	}
 	pbx_log(LOG_WARNING, "%s: No call to transfer found on line %d\n", d->id, instance);
 	sccp_dev_starttone(d, SKINNY_TONE_BEEPBONK, 0, 0, SKINNY_TONEDIRECTION_USER);
