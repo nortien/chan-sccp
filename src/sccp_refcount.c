@@ -212,6 +212,7 @@ struct refcount_object {
 #endif	
 	uint16_t len;
 	uint16_t alive;
+	time_t retired;											/*!< time of the final release; destroyed after the grace period */
 	SCCP_RWLIST_ENTRY (RefCountedObject) list;
 	unsigned char data[0] __attribute__((aligned(8)));
 };
@@ -221,6 +222,71 @@ static ast_rwlock_t objectslock;										// general lock to modify hash table e
 static struct refcount_objentry{
 	SCCP_RWLIST_HEAD (, RefCountedObject) refCountedObjects  __attribute__((aligned(8)));			//!< one rwlock per hash table entry, used to modify list
 } *objects[SCCP_HASH_PRIME] = {0};										//!< objects hash table
+
+/*
+ * Deferred free.
+ *
+ * A final release used to run the destructor and free the object right away (after a
+ * sched_yield() "to let other threads finish"). Lockless readers still holding a raw
+ * pointer to the data then read freed memory. Instead, a dead object (alive != marker
+ * and already unlinked from its hash bucket, so retain() can no longer find it) is parked
+ * in a quarantine and only destroyed by the reaper once SCCP_REFCOUNT_GRACE_SECONDS have
+ * passed, by which time every in-flight reader has long moved on.
+ */
+#define SCCP_REFCOUNT_GRACE_SECONDS 3
+static SCCP_RWLIST_HEAD (, RefCountedObject) quarantine;
+static pthread_t reaper_thread;
+static volatile int reaper_stop = 0;
+static boolean_t reaper_running = FALSE;
+
+static void sccp_refcount_destroy_obj(RefCountedObject * obj)
+{
+	if ((&obj_info[obj->type])->destructor) {
+		(&obj_info[obj->type])->destructor(obj->data);
+	}
+#ifndef SCCP_ATOMIC
+	ast_mutex_destroy(&obj->lock);
+#endif
+	memset(obj, 0, sizeof(RefCountedObject));
+	sccp_free(obj);
+}
+
+/* destroy every quarantined object whose grace period has expired (or all of them on shutdown) */
+static void sccp_refcount_reap(boolean_t everything)
+{
+	RefCountedObject * batch[64];
+	int n = 0;
+	do {
+		time_t now = time(NULL);
+		RefCountedObject * obj = NULL;
+		n = 0;
+		SCCP_RWLIST_WRLOCK(&quarantine);
+		SCCP_RWLIST_TRAVERSE_SAFE_BEGIN(&quarantine, obj, list) {
+			if (everything || now - obj->retired >= SCCP_REFCOUNT_GRACE_SECONDS) {
+				SCCP_RWLIST_REMOVE_CURRENT(list);
+				batch[n++] = obj;
+				if (n == (int)ARRAY_LEN(batch)) {
+					break;
+				}
+			}
+		}
+		SCCP_RWLIST_TRAVERSE_SAFE_END;
+		SCCP_RWLIST_UNLOCK(&quarantine);
+		for (int i = 0; i < n; i++) {								/* destructors may take other locks: run them outside the quarantine lock */
+			sccp_log((DEBUGCAT_REFCOUNT)) (VERBOSE_PREFIX_1 "SCCP: (sccp_refcount_reap) Destroying %p (%s)\n", batch[i], batch[i]->identifier);
+			sccp_refcount_destroy_obj(batch[i]);
+		}
+	} while (n == (int)ARRAY_LEN(batch));
+}
+
+static void * sccp_refcount_reaper(void * data)
+{
+	while (!reaper_stop) {
+		usleep(250000);
+		sccp_refcount_reap(FALSE);
+	}
+	return NULL;
+}
 
 void sccp_refcount_init(void)
 {
@@ -232,7 +298,15 @@ void sccp_refcount_init(void)
 	__rotate_debug_file();
 #endif
 //	memset(objects, 0, sizeof(RefCountedObject) * SCCP_HASH_PRIME);
+	SCCP_RWLIST_HEAD_INIT(&quarantine);
 	runState = SCCP_REF_RUNNING;
+	reaper_stop = 0;
+	if (pbx_pthread_create(&reaper_thread, NULL, sccp_refcount_reaper, NULL) == 0) {
+		reaper_running = TRUE;
+	} else {
+		pbx_log(LOG_ERROR, "SCCP: (Refcount) could not start the reaper thread, falling back to immediate free\n");
+		reaper_running = FALSE;
+	}
 }
 
 void sccp_refcount_destroy(void)
@@ -247,6 +321,14 @@ void sccp_refcount_destroy(void)
 	runState = SCCP_REF_STOPPED;
 
 	sched_yield();												//make sure all other threads can finish their work first.
+
+	if (reaper_running) {
+		reaper_stop = 1;
+		pthread_join(reaper_thread, NULL);
+		reaper_running = FALSE;
+	}
+	sccp_refcount_reap(TRUE);										/* drain the quarantine: no readers can be left at shutdown */
+	SCCP_RWLIST_HEAD_DESTROY(&quarantine);
 
 	// cleanup if necessary, if everything is well, this should not be necessary
 	ast_rwlock_wrlock(&objectslock);
@@ -504,30 +586,32 @@ static gcc_inline void sccp_refcount_remove_obj(const void *ptr)
 		}
 		SCCP_RWLIST_UNLOCK(&(objects[hash]->refCountedObjects));
 	}
-	if (obj) {
-		sched_yield();											// make sure all other threads can finish their work first.
-		// should resolve lockless refcount SMP issues
-		// BTW we are not allowed to sleep whilst having a reference
-		// fire destructor
-		if (obj && obj->data == ptr && SCCP_LIVE_MARKER != obj->alive) {
-			sccp_log((DEBUGCAT_REFCOUNT)) (VERBOSE_PREFIX_1 "SCCP: (sccp_refcount_remove_obj) Destroying %p at hash: %d\n", obj, hash);
-			if ((&obj_info[obj->type])->destructor) {
-				(&obj_info[obj->type])->destructor(ptr);
-			}
-			memset(obj, 0, sizeof(RefCountedObject));
-			sccp_free(obj);
-			obj = NULL;
-		}
-	}
-	if (cleanup_objects && runState == SCCP_REF_RUNNING && objects[hash]) {
-		ast_rwlock_wrlock(&objectslock);
-		SCCP_RWLIST_WRLOCK(&(objects[hash]->refCountedObjects));
-		if (SCCP_RWLIST_GETSIZE(&(objects[hash]->refCountedObjects)) == 0) {			/* recheck size */
-			SCCP_RWLIST_HEAD_DESTROY(&(objects[hash]->refCountedObjects));
-			sccp_free(objects[hash]);
-			objects[hash] = NULL;
+	if (obj && obj->data == ptr && SCCP_LIVE_MARKER != obj->alive) {
+		if (reaper_running && runState == SCCP_REF_RUNNING) {
+			/* dead and unlinked: retain() can no longer find it. Park it; the reaper frees it after the grace period. */
+			obj->retired = time(NULL);
+			SCCP_RWLIST_WRLOCK(&quarantine);
+			SCCP_RWLIST_INSERT_TAIL(&quarantine, obj, list);
+			SCCP_RWLIST_UNLOCK(&quarantine);
+			sccp_log((DEBUGCAT_REFCOUNT)) (VERBOSE_PREFIX_1 "SCCP: (sccp_refcount_remove_obj) Quarantined %p at hash: %d\n", obj, hash);
 		} else {
-			SCCP_RWLIST_UNLOCK(&(objects[hash]->refCountedObjects));
+			sccp_log((DEBUGCAT_REFCOUNT)) (VERBOSE_PREFIX_1 "SCCP: (sccp_refcount_remove_obj) Destroying %p at hash: %d\n", obj, hash);
+			sccp_refcount_destroy_obj(obj);
+		}
+		obj = NULL;
+	}
+	if (cleanup_objects && runState == SCCP_REF_RUNNING) {
+		ast_rwlock_wrlock(&objectslock);
+		if (objects[hash]) {								/* recheck under objectslock: a concurrent release may have freed this bucket */
+			SCCP_RWLIST_WRLOCK(&(objects[hash]->refCountedObjects));
+			if (SCCP_RWLIST_GETSIZE(&(objects[hash]->refCountedObjects)) == 0) {		/* recheck size */
+				SCCP_RWLIST_UNLOCK(&(objects[hash]->refCountedObjects));	/* never destroy a held lock; objectslock keeps the bucket private meanwhile */
+				SCCP_RWLIST_HEAD_DESTROY(&(objects[hash]->refCountedObjects));
+				sccp_free(objects[hash]);
+				objects[hash] = NULL;
+			} else {
+				SCCP_RWLIST_UNLOCK(&(objects[hash]->refCountedObjects));
+			}
 		}
 		ast_rwlock_unlock(&objectslock);
 	}
