@@ -74,7 +74,7 @@
  *  .
  * channel.c
  * - sccp_channel_endcall ***
- *   - reset device if still device->pendingUpdate,line->pendingUpdate or softkeyset->pendingUpdate
+ *   - reset device if still sccp_device_getPendingUpdate(device),line->pendingUpdate or softkeyset->pendingUpdate
  *   .
  * .
  *
@@ -2498,11 +2498,11 @@ static void sccp_config_buildDevice(sccp_device_t * d, PBX_VARIABLE_TYPE * varia
 #endif
 	if (GLOB(reload_in_progress) && res == SCCP_CONFIG_NEEDDEVICERESET && d) {
 		sccp_log((DEBUGCAT_CORE))(VERBOSE_PREFIX_1 "%s: major changes for device detected, device reset required -> pendingUpdate=1\n", d->id);
-		d->pendingUpdate = 1;
+		sccp_device_setPendingUpdate(d, 1);
 	} else {
-		d->pendingUpdate = 0;
+		sccp_device_setPendingUpdate(d, 0);
 	}
-	d->pendingDelete = 0;
+	sccp_device_setPendingDelete(d, 0);
 }
 
 /*!
@@ -2757,9 +2757,9 @@ boolean_t sccp_config_readDevicesLines(sccp_readingtype_t readingtype)
 				sccp_device_addToGlobals(device);
 				device_count++;
 			} else {
-				if (device->pendingDelete) {
+				if (sccp_device_getPendingDelete(device)) {
 					nat                   = device->nat;
-					device->pendingDelete = 0;
+					sccp_device_setPendingDelete(device, 0);
 				}
 			}
 			sccp_config_buildDevice(device, v, FALSE);
@@ -2768,7 +2768,7 @@ boolean_t sccp_config_readDevicesLines(sccp_readingtype_t readingtype)
 			// sccp_config_restoreDeviceFeatureStatus(device);
 
 			/* restore current nat status, if device does not get restarted */
-			if (0 == device->pendingDelete && sccp_device_getRegistrationState(device) != SKINNY_DEVICE_RS_NONE) {
+			if (0 == sccp_device_getPendingDelete(device) && sccp_device_getRegistrationState(device) != SKINNY_DEVICE_RS_NONE) {
 				if (SCCP_NAT_AUTO == device->nat && (SCCP_NAT_AUTO == nat || SCCP_NAT_AUTO_OFF == nat || SCCP_NAT_AUTO_ON == nat)) {
 					device->nat = nat;
 				}
@@ -2859,17 +2859,17 @@ boolean_t sccp_config_readDevicesLines(sccp_readingtype_t readingtype)
 					/* we did not find this line, mark it for deletion */
 					if (!rv) {
 						sccp_log((DEBUGCAT_CONFIG))(VERBOSE_PREFIX_3 "%s: realtime device not found - set pendingDelete=1\n", device->id);
-						device->pendingDelete = 1;
+						sccp_device_setPendingDelete(device, 1);
 						break;
 					}
-					device->pendingDelete = 0;
+					sccp_device_setPendingDelete(device, 0);
 
 					res = sccp_config_applyDeviceConfiguration(device, rv);
 					/* check if we did some changes that needs a device update */
 					if (GLOB(reload_in_progress) && res & SCCP_CONFIG_NEEDDEVICERESET) {
-						device->pendingUpdate = 1;
+						sccp_device_setPendingUpdate(device, 1);
 					} else {
-						device->pendingUpdate = 0;
+						sccp_device_setPendingUpdate(device, 0);
 					}
 					pbx_variables_destroy(rv);
 				}
@@ -2885,9 +2885,9 @@ boolean_t sccp_config_readDevicesLines(sccp_readingtype_t readingtype)
 		SCCP_RWLIST_RDLOCK(&GLOB(devices));
 		SCCP_RWLIST_TRAVERSE(&GLOB(devices), d, list) {
 			if (d->realtime) {
-				d->pendingDelete = 1;
-			} else if (!d->pendingDelete && !d->pendingUpdate) {
-				d->pendingUpdate = 1;
+				sccp_device_setPendingDelete(d, 1);
+			} else if (!sccp_device_getPendingDelete(d) && !sccp_device_getPendingUpdate(d)) {
+				sccp_device_setPendingUpdate(d, 1);
 			}
 		}
 		SCCP_RWLIST_UNLOCK(&GLOB(devices));
@@ -2969,7 +2969,7 @@ sccp_configurationchange_t sccp_config_applyDeviceConfiguration(devicePtr d, PBX
 		return SCCP_CONFIG_ERROR;
 	}
 
-	if (d->pendingDelete) {
+	if (sccp_device_getPendingDelete(d)) {
 		sccp_dev_clean_restart(d, FALSE);
 	}
 	for (; v; v = v->next) {

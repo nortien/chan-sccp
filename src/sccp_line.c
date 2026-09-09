@@ -77,8 +77,8 @@ void sccp_line_post_reload(void)
 			sccp_linedevice_t * ld = NULL;
 			SCCP_LIST_LOCK(&l->devices);
 			SCCP_LIST_TRAVERSE(&l->devices, ld, list) {
-				ld->device->pendingUpdate = 1;
-				sccp_log((DEBUGCAT_CONFIG + DEBUGCAT_LINE))(VERBOSE_PREFIX_3 "%s: LineDevice (line_post_reload) update:%d, delete:%d\n", l->name, ld->device->pendingUpdate, ld->device->pendingDelete);
+				sccp_device_setPendingUpdate(ld->device, 1);
+				sccp_log((DEBUGCAT_CONFIG + DEBUGCAT_LINE))(VERBOSE_PREFIX_3 "%s: LineDevice (line_post_reload) update:%d, delete:%d\n", l->name, sccp_device_getPendingUpdate(ld->device), sccp_device_getPendingDelete(ld->device));
 			}
 			SCCP_LIST_UNLOCK(&l->devices);
 			if(l->pendingDelete) {
@@ -349,16 +349,21 @@ void sccp_line_copyCodecSetsFromLineToChannel(constLinePtr l, constDevicePtr may
 		return;
 	}
 	/* work already done in sccp_line_copyCodecSetsFromDeviceToLine during sccp_line_addDevice */
+	skinny_capabilities_t device_capabilities;
+	skinny_capabilities_t device_preferences;
+	if (maybe_d) {
+		sccp_device_getCodecSets(maybe_d, &device_capabilities, &device_preferences);
+	}
 	if (!l->preferences_set_on_line_level && maybe_d) {
-		memcpy(&c->preferences.audio, &maybe_d->preferences.audio, sizeof(c->preferences.audio));
-		memcpy(&c->preferences.video, &maybe_d->preferences.video, sizeof(c->preferences.video));
+		memcpy(&c->preferences.audio, &device_preferences.audio, sizeof(c->preferences.audio));
+		memcpy(&c->preferences.video, &device_preferences.video, sizeof(c->preferences.video));
 	} else {
 		memcpy(&c->preferences.audio, &l->preferences.audio, sizeof(c->preferences.audio));
 		memcpy(&c->preferences.video, &l->preferences.video, sizeof(c->preferences.video));
 	}
 	if (maybe_d) {
-		memcpy(&c->capabilities.audio, &maybe_d->capabilities.audio, sizeof(c->capabilities.audio));
-		memcpy(&c->capabilities.video, &maybe_d->capabilities.video, sizeof(c->capabilities.video));
+		memcpy(&c->capabilities.audio, &device_capabilities.audio, sizeof(c->capabilities.audio));
+		memcpy(&c->capabilities.video, &device_capabilities.video, sizeof(c->capabilities.video));
 	} else {
 		memcpy(&c->capabilities.audio, &l->capabilities.audio, sizeof(c->capabilities.audio));
 		memcpy(&c->capabilities.video, &l->capabilities.video, sizeof(c->capabilities.video));
@@ -434,13 +439,15 @@ void sccp_line_updateCapabilitiesFromDevicesToLine(linePtr l)
 	// combine all capabilities
 	SCCP_LIST_LOCK(&l->devices);
 	SCCP_LIST_TRAVERSE(&l->devices, ld, list) {
+		skinny_capabilities_t device_capabilities;
+		sccp_device_getCodecSets(ld->device, &device_capabilities, NULL);				/* the device's session thread rewrites them on UpdateCapabilities */
 		if (first) {
-			memcpy(&l->capabilities.audio, &ld->device->capabilities.audio, sizeof(l->capabilities.audio));
-			memcpy(&l->capabilities.video, &ld->device->capabilities.video, sizeof(l->capabilities.video));
+			memcpy(&l->capabilities.audio, &device_capabilities.audio, sizeof(l->capabilities.audio));
+			memcpy(&l->capabilities.video, &device_capabilities.video, sizeof(l->capabilities.video));
 			first = FALSE;
 		} else {
-			sccp_codec_combineSets(l->capabilities.audio, ld->device->capabilities.audio);
-			sccp_codec_combineSets(l->capabilities.video, ld->device->capabilities.video);
+			sccp_codec_combineSets(l->capabilities.audio, device_capabilities.audio);
+			sccp_codec_combineSets(l->capabilities.video, device_capabilities.video);
 		}
 	}
 	SCCP_LIST_UNLOCK(&l->devices);

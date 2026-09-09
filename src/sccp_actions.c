@@ -2584,6 +2584,9 @@ void handle_capabilities_res(constSessionPtr s, devicePtr d, constMessagePtr msg
 	uint8_t numVideoCodecs = 0;
 #endif
 	skinny_codec_t codec = 0;
+	skinny_capabilities_t caps;
+	skinny_capabilities_t prefs;
+	sccp_device_getCodecSets(d, &caps, &prefs);								/* work on a copy, publish under the codec lock below */
 
 	uint8_t n = letohl(msg_in->data.CapabilitiesResMessage.lel_count);
 	if (n > SKINNY_MAX_CAPABILITIES) {						/* clamp attacker-controlled count to the array size */
@@ -2594,12 +2597,12 @@ void handle_capabilities_res(constSessionPtr s, devicePtr d, constMessagePtr msg
 	for(uint i = 0; i < n; i++) {
 		codec = letohl(msg_in->data.CapabilitiesResMessage.caps[i].lel_payloadCapability);
 		if (codec2type(codec) == SKINNY_CODEC_TYPE_AUDIO) {
-			d->capabilities.audio[numAudioCodecs++] = codec;
+			caps.audio[numAudioCodecs++] = codec;
 			//sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: Added audio codec %-25s (%d)\n", d->id, codec2str(codec), codec);
 		} else
 #ifdef CS_SCCP_VIDEO
 		if (codec2type(codec) == SKINNY_CODEC_TYPE_VIDEO) {
-			d->capabilities.video[numVideoCodecs++] = codec;
+			caps.video[numVideoCodecs++] = codec;
 			//sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: Added video codec %-25s (%d)\n", d->id, codec2str(codec), codec);
 		} else
 #endif
@@ -2608,10 +2611,11 @@ void handle_capabilities_res(constSessionPtr s, devicePtr d, constMessagePtr msg
 		}
 	}
 
-	if ((SKINNY_CODEC_NONE == d->preferences.audio[0])) {
+	if ((SKINNY_CODEC_NONE == prefs.audio[0])) {
 		/* we have no preferred codec, use capabilities -MC */
-		memcpy(&d->preferences.audio, &d->capabilities.audio, sizeof(d->preferences.audio));
+		memcpy(&prefs.audio, &caps.audio, sizeof(prefs.audio));
 	}
+	sccp_device_setCodecSets(d, &caps, &prefs);
 	
 	//char cap_buf[512];
 	//sccp_codec_multiple2str(cap_buf, sizeof(cap_buf) - 1, d->capabilities.audio, ARRAY_LEN(d->capabilities.audio));
@@ -4322,6 +4326,9 @@ void handle_updatecapabilities_message(constSessionPtr s, devicePtr d, constMess
 	if (letohl(msg_in->header.lel_protocolVer) >= 16) {
 		handle_updatecapabilities_V2_message(s, d, msg_in);
 	} else {
+		skinny_capabilities_t caps;
+		skinny_capabilities_t prefs;
+		sccp_device_getCodecSets(d, &caps, &prefs);							/* work on a copy, publish under the codec lock below */
 		uint8_t audio_capability = 0;
 
 		uint8_t audio_capabilities = 0;
@@ -4338,7 +4345,7 @@ void handle_updatecapabilities_message(constSessionPtr s, devicePtr d, constMess
 				audio_codec = letohl(msg_in->data.UpdateCapabilitiesMessage.v3.audioCaps[audio_capability].lel_payloadCapability);
 				if (codec2type(audio_codec) == SKINNY_CODEC_TYPE_AUDIO) {
 					maxFramesPerPacket = letohl(msg_in->data.UpdateCapabilitiesMessage.v3.audioCaps[audio_capability].lel_maxFramesPerPacket);
-					d->capabilities.audio[audio_capability] = audio_codec;		/** store our audio capabilities */
+					caps.audio[audio_capability] = audio_codec;		/** store our audio capabilities */
 					sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s %-6d\n", DEV_ID_LOG(d), audio_codec, codec2str(audio_codec), maxFramesPerPacket);
 				} else {
 					sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s (SKIPPED)\n", DEV_ID_LOG(d), audio_codec, codec2str(audio_codec));
@@ -4350,7 +4357,7 @@ void handle_updatecapabilities_message(constSessionPtr s, devicePtr d, constMess
 					sccp_log_and((DEBUGCAT_DEVICE + DEBUGCAT_HIGH))(VERBOSE_PREFIX_3 "%s: %7s codecMode: %d, dynamicPayload: %d, codecParam1: %d, codecParam2: %d\n", DEV_ID_LOG(d), "", msg_in->data.UpdateCapabilitiesMessage.v3.audioCaps[audio_capability].payloads.codecParams.codecMode, msg_in->data.UpdateCapabilitiesMessage.v3.audioCaps[audio_capability].payloads.codecParams.dynamicPayload, msg_in->data.UpdateCapabilitiesMessage.v3.audioCaps[audio_capability].payloads.codecParams.codecParam1, msg_in->data.UpdateCapabilitiesMessage.v3.audioCaps[audio_capability].payloads.codecParams.codecParam2);
 				}
 			}
-			sccp_codec_reduceSet(d->preferences.audio , d->capabilities.audio);
+			sccp_codec_reduceSet(prefs.audio, caps.audio);
 		}
 #ifdef CS_SCCP_VIDEO
 		uint8_t video_customPictureFormat = 0;
@@ -4384,7 +4391,7 @@ void handle_updatecapabilities_message(constSessionPtr s, devicePtr d, constMess
 			for (video_capability = 0; video_capability < video_capabilities; video_capability++) {
 				video_codec = letohl(msg_in->data.UpdateCapabilitiesMessage.v3.videoCaps[video_capability].lel_payloadCapability);
 				if (codec2type(video_codec) == SKINNY_CODEC_TYPE_VIDEO) {
-					d->capabilities.video[video_capability] = video_codec;		/** store our video capabilities */
+					caps.video[video_capability] = video_codec;		/** store our video capabilities */
 					//sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s\n", DEV_ID_LOG(d), video_codec, codec2str(video_codec));
 #if DEBUG
 					char transmitReceiveStr[5];
@@ -4399,14 +4406,14 @@ void handle_updatecapabilities_message(constSessionPtr s, devicePtr d, constMess
 					sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s (SKIPPED)\n", DEV_ID_LOG(d), video_codec, codec2str(video_codec));
 				}
 			}
-			sccp_codec_reduceSet(d->preferences.video , d->capabilities.video);
+			sccp_codec_reduceSet(prefs.video, caps.video);
 			sccp_softkey_setSoftkeyState(d, KEYMODE_CONNTRANS, SKINNY_LBL_VIDEO_MODE, TRUE);
 			sccp_softkey_setSoftkeyState(d, KEYMODE_CONNECTED, SKINNY_LBL_VIDEO_MODE, TRUE);
 			if (previousVideoSupport == FALSE) {
 				sccp_dev_set_message(d, "Video support enabled", 5, FALSE, FALSE);
 			}
 		} else {
-			d->capabilities.video[0] = SKINNY_CODEC_NONE;
+			caps.video[0] = SKINNY_CODEC_NONE;
 			sccp_softkey_setSoftkeyState(d, KEYMODE_CONNTRANS, SKINNY_LBL_VIDEO_MODE, FALSE);
 			sccp_softkey_setSoftkeyState(d, KEYMODE_CONNECTED, SKINNY_LBL_VIDEO_MODE, FALSE);
 			sccp_log((DEBUGCAT_CORE + DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_3 "%s: disable video mode softkey\n", DEV_ID_LOG(d));
@@ -4415,6 +4422,7 @@ void handle_updatecapabilities_message(constSessionPtr s, devicePtr d, constMess
 			}
 		}
 #endif
+		sccp_device_setCodecSets(d, &caps, &prefs);
 		sccp_line_updateLineCapabilitiesByDevice(d);
 	}
 }
@@ -4432,6 +4440,9 @@ void handle_updatecapabilities_message(constSessionPtr s, devicePtr d, constMess
 void handle_updatecapabilities_V2_message(constSessionPtr s, devicePtr d, constMessagePtr msg_in)
 {
 	pbx_assert(d != NULL && s != NULL && msg_in != NULL);
+	skinny_capabilities_t caps;
+	skinny_capabilities_t prefs;
+	sccp_device_getCodecSets(d, &caps, &prefs);								/* work on a copy, publish under the codec lock below */
 	uint8_t audio_capability = 0;
 
 	uint8_t audio_capabilities = 0;
@@ -4449,7 +4460,7 @@ void handle_updatecapabilities_V2_message(constSessionPtr s, devicePtr d, constM
 			audio_codec = letohl(msg_in->data.UpdateCapabilitiesV2Message.audioCaps[audio_capability].lel_payloadCapability);
 			if (codec2type(audio_codec) == SKINNY_CODEC_TYPE_AUDIO) {
 				maxFramesPerPacket = letohl(msg_in->data.UpdateCapabilitiesV2Message.audioCaps[audio_capability].lel_maxFramesPerPacket);
-				d->capabilities.audio[audio_capability] = audio_codec;		/** store our audio capabilities */
+				caps.audio[audio_capability] = audio_codec;		/** store our audio capabilities */
 				sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s %-6d\n", DEV_ID_LOG(d), audio_codec, codec2str(audio_codec), maxFramesPerPacket);
 			} else {
 				sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s (SKIPPED)\n", DEV_ID_LOG(d), audio_codec, codec2str(audio_codec));
@@ -4460,7 +4471,7 @@ void handle_updatecapabilities_V2_message(constSessionPtr s, devicePtr d, constM
 				sccp_log_and((DEBUGCAT_DEVICE + DEBUGCAT_HIGH))(VERBOSE_PREFIX_3 "%s: %7s codecMode: %d, dynamicPayload: %d, codecParam1: %d, codecParam2: %d\n", DEV_ID_LOG(d), "", msg_in->data.UpdateCapabilitiesV2Message.audioCaps[audio_capability].payloads.codecParams.codecMode, msg_in->data.UpdateCapabilitiesV2Message.audioCaps[audio_capability].payloads.codecParams.dynamicPayload, msg_in->data.UpdateCapabilitiesV2Message.audioCaps[audio_capability].payloads.codecParams.codecParam1, msg_in->data.UpdateCapabilitiesV2Message.audioCaps[audio_capability].payloads.codecParams.codecParam2);
 			}
 		}
-		sccp_codec_reduceSet(d->preferences.audio , d->capabilities.audio);
+		sccp_codec_reduceSet(prefs.audio, caps.audio);
 	}
 #ifdef CS_SCCP_VIDEO
 #if DEBUG
@@ -4485,7 +4496,7 @@ void handle_updatecapabilities_V2_message(constSessionPtr s, devicePtr d, constM
 		for (video_capability = 0; video_capability < video_capabilities; video_capability++) {
 			video_codec = letohl(msg_in->data.UpdateCapabilitiesV2Message.videoCaps[video_capability].lel_payloadCapability);
 			if (codec2type(video_codec) == SKINNY_CODEC_TYPE_VIDEO) {
-				d->capabilities.video[video_capability] = video_codec;		/** store our video capabilities */
+				caps.video[video_capability] = video_codec;		/** store our video capabilities */
 				//sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s\n", DEV_ID_LOG(d), video_codec, codec2str(video_codec));
 #if DEBUG
 				char transmitReceiveStr[5];
@@ -4500,14 +4511,14 @@ void handle_updatecapabilities_V2_message(constSessionPtr s, devicePtr d, constM
 				sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s (SKIPPED)\n", DEV_ID_LOG(d), video_codec, codec2str(video_codec));
 			}
 		}
-		sccp_codec_reduceSet(d->preferences.video , d->capabilities.video);
+		sccp_codec_reduceSet(prefs.video, caps.video);
 		sccp_softkey_setSoftkeyState(d, KEYMODE_CONNTRANS, SKINNY_LBL_VIDEO_MODE, TRUE);
 		sccp_softkey_setSoftkeyState(d, KEYMODE_CONNECTED, SKINNY_LBL_VIDEO_MODE, TRUE);
 		if (previousVideoSupport == FALSE) {
 			sccp_dev_set_message(d, "Video support enabled", 5, FALSE, FALSE);
 		}
 	} else {
-		d->capabilities.video[0] = SKINNY_CODEC_NONE;
+		caps.video[0] = SKINNY_CODEC_NONE;
 		sccp_softkey_setSoftkeyState(d, KEYMODE_CONNTRANS, SKINNY_LBL_VIDEO_MODE, FALSE);
 		sccp_softkey_setSoftkeyState(d, KEYMODE_CONNECTED, SKINNY_LBL_VIDEO_MODE, FALSE);
 		sccp_log((DEBUGCAT_CORE + DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_3 "%s: disable video mode softkey\n", DEV_ID_LOG(d));
@@ -4516,6 +4527,7 @@ void handle_updatecapabilities_V2_message(constSessionPtr s, devicePtr d, constM
 		}
 	}
 #endif
+	sccp_device_setCodecSets(d, &caps, &prefs);
 	sccp_line_updateLineCapabilitiesByDevice(d);
 }
 
@@ -4533,6 +4545,9 @@ void handle_updatecapabilities_V2_message(constSessionPtr s, devicePtr d, constM
 void handle_updatecapabilities_V3_message(constSessionPtr s, devicePtr d, constMessagePtr msg_in)
 {
 	pbx_assert(d != NULL && s != NULL && msg_in != NULL);
+	skinny_capabilities_t caps;
+	skinny_capabilities_t prefs;
+	sccp_device_getCodecSets(d, &caps, &prefs);								/* work on a copy, publish under the codec lock below */
 	uint8_t audio_capability = 0;
 
 	uint8_t audio_capabilities = 0;
@@ -4550,7 +4565,7 @@ void handle_updatecapabilities_V3_message(constSessionPtr s, devicePtr d, constM
 			audio_codec = letohl(msg_in->data.UpdateCapabilitiesV3Message.audioCaps[audio_capability].lel_payloadCapability);
 			if (codec2type(audio_codec) == SKINNY_CODEC_TYPE_AUDIO) {
 				maxFramesPerPacket = letohl(msg_in->data.UpdateCapabilitiesV3Message.audioCaps[audio_capability].lel_maxFramesPerPacket);
-				d->capabilities.audio[audio_capability] = audio_codec;		/** store our audio capabilities */
+				caps.audio[audio_capability] = audio_codec;		/** store our audio capabilities */
 				sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s %-6d\n", DEV_ID_LOG(d), audio_codec, codec2str(audio_codec), maxFramesPerPacket);
 			} else {
 				sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s (SKIPPED)\n", DEV_ID_LOG(d), audio_codec, codec2str(audio_codec));
@@ -4561,7 +4576,7 @@ void handle_updatecapabilities_V3_message(constSessionPtr s, devicePtr d, constM
 				sccp_log_and((DEBUGCAT_DEVICE + DEBUGCAT_HIGH))(VERBOSE_PREFIX_3 "%s: %7s codecMode: %d, dynamicPayload: %d, codecParam1: %d, codecParam2: %d\n", DEV_ID_LOG(d), "", msg_in->data.UpdateCapabilitiesV3Message.audioCaps[audio_capability].payloads.codecParams.codecMode, msg_in->data.UpdateCapabilitiesV3Message.audioCaps[audio_capability].payloads.codecParams.dynamicPayload, msg_in->data.UpdateCapabilitiesV3Message.audioCaps[audio_capability].payloads.codecParams.codecParam1, msg_in->data.UpdateCapabilitiesV3Message.audioCaps[audio_capability].payloads.codecParams.codecParam2);
 			}
 		}
-		sccp_codec_reduceSet(d->preferences.audio , d->capabilities.audio);
+		sccp_codec_reduceSet(prefs.audio, caps.audio);
 	}
 
 #ifdef CS_SCCP_VIDEO
@@ -4587,7 +4602,7 @@ void handle_updatecapabilities_V3_message(constSessionPtr s, devicePtr d, constM
 		for (video_capability = 0; video_capability < video_capabilities; video_capability++) {
 			video_codec = letohl(msg_in->data.UpdateCapabilitiesV3Message.videoCaps[video_capability].lel_payloadCapability);
 			if (codec2type(video_codec) == SKINNY_CODEC_TYPE_VIDEO) {
-				d->capabilities.video[video_capability] = video_codec;		/** store our video capabilities */
+				caps.video[video_capability] = video_codec;		/** store our video capabilities */
 				//sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s\n", DEV_ID_LOG(d), video_codec, codec2str(video_codec));
 #if DEBUG
 				char transmitReceiveStr[5];
@@ -4608,14 +4623,14 @@ void handle_updatecapabilities_V3_message(constSessionPtr s, devicePtr d, constM
 				sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: %7d %-25s (SKIPPED)\n", DEV_ID_LOG(d), video_codec, codec2str(video_codec));
 			}
 		}
-		sccp_codec_reduceSet(d->preferences.video , d->capabilities.video);
+		sccp_codec_reduceSet(prefs.video, caps.video);
 		sccp_softkey_setSoftkeyState(d, KEYMODE_CONNTRANS, SKINNY_LBL_VIDEO_MODE, TRUE);
 		sccp_softkey_setSoftkeyState(d, KEYMODE_CONNECTED, SKINNY_LBL_VIDEO_MODE, TRUE);
 		if (previousVideoSupport == FALSE) {
 			sccp_dev_set_message(d, "Video support enabled", 5, FALSE, FALSE);
 		}
 	} else {
-		d->capabilities.video[0] = SKINNY_CODEC_NONE;
+		caps.video[0] = SKINNY_CODEC_NONE;
 		sccp_softkey_setSoftkeyState(d, KEYMODE_CONNTRANS, SKINNY_LBL_VIDEO_MODE, FALSE);
 		sccp_softkey_setSoftkeyState(d, KEYMODE_CONNECTED, SKINNY_LBL_VIDEO_MODE, FALSE);
 		sccp_log((DEBUGCAT_CORE + DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_3 "%s: disable video mode softkey\n", DEV_ID_LOG(d));
@@ -4624,6 +4639,7 @@ void handle_updatecapabilities_V3_message(constSessionPtr s, devicePtr d, constM
 		}
 	}
 #endif
+	sccp_device_setCodecSets(d, &caps, &prefs);
 	sccp_line_updateLineCapabilitiesByDevice(d);
 }
 

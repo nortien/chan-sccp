@@ -574,7 +574,7 @@ static int sccp_manager_device_add_line(struct mansession *s, const struct messa
 		return 0;
 	}
 	if (sccp_config_addButton(&d->buttonconfig, -1, LINE, line->name, NULL, NULL) == SCCP_CONFIG_CHANGE_CHANGED) {
-		d->pendingUpdate = 1;
+		sccp_device_setPendingUpdate(d, 1);
 		sccp_device_check_update(d);
 		astman_append(s, "Done\r\n");
 		astman_append(s, "\r\n");

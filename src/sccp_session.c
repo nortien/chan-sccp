@@ -797,7 +797,7 @@ void *sccp_session_device_thread(void *session)
 	while(s->sc.fd > 0 && !s->session_stop) {
 		if (s->device) {
 			sccp_device_t *d = s->device;
-			if (d->pendingUpdate || d->pendingDelete) {
+			if (sccp_device_getPendingUpdate(d) || sccp_device_getPendingDelete(d)) {
 				pbx_rwlock_rdlock(&GLOB(lock));
 				boolean_t reload_in_progress = GLOB(reload_in_progress);
 				pbx_rwlock_unlock(&GLOB(lock));
@@ -809,9 +809,13 @@ void *sccp_session_device_thread(void *session)
 					continue;
 				}
 			}
-			if ((d->active_channel ? TRUE : FALSE) != oncall) {
+			/* read the atomic hint, not the active_channel pointer: the pointer is rewritten from the
+			 * call-setup thread under the refcount framework, and this poll loop only needs to know
+			 * whether a call is up in order to pick the poll timeout */
+			boolean_t hasActiveChannel = sccp_device_hasActiveChannel(d);
+			if (hasActiveChannel != oncall) {
 				recalc_wait_time(s);
-				oncall = (d->active_channel) ? TRUE : FALSE;
+				oncall = hasActiveChannel;
 			}
 			if (d->status.token == SCCP_TOKEN_STATE_ACK) {
 				tokenThread = TRUE;								// only does TCP-Keepalive

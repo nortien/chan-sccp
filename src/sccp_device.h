@@ -153,6 +153,7 @@ struct sccp_device {
 	sccp_private_device_data_t *privateData;
 	
 	sccp_channel_t *active_channel;										/*!< Active SCCP Channel */
+	boolean_t activeChannelPresent;										/*!< atomic "there is an active channel" hint, kept in step with active_channel for cross-thread readers (session poll loop) */
 	sccp_line_t *currentLine;										/*!< Current Line */
 
 	struct {
@@ -191,6 +192,7 @@ struct sccp_device {
 
 	skinny_capabilities_t capabilities;
 	skinny_capabilities_t preferences;
+	pbx_mutex_t codec_lock;											/*!< guards capabilities/preferences: written from the phone's session thread, read from other threads (shared-line update, channel setup, cli) */
 
 	time_t registrationTime;
 
@@ -320,6 +322,17 @@ struct sccp_device {
 	boolean_t pendingUpdate;										/*!< this will contain the updated line struct once reloaded from config to update the line when unused */
 };
 
+/*
+ * pendingUpdate / pendingDelete are set from reload, CLI and AMI threads and polled by the
+ * session thread without a lock. Keep every access atomic so the flag hand-off is a proper
+ * release/acquire pair instead of a data race.
+ */
+static inline boolean_t sccp_device_getPendingUpdate(const sccp_device_t * d) { return __atomic_load_n(&d->pendingUpdate, __ATOMIC_ACQUIRE); }
+static inline boolean_t sccp_device_getPendingDelete(const sccp_device_t * d) { return __atomic_load_n(&d->pendingDelete, __ATOMIC_ACQUIRE); }
+static inline void sccp_device_setPendingUpdate(const sccp_device_t * d, boolean_t v) { __atomic_store_n((boolean_t *)&d->pendingUpdate, v, __ATOMIC_RELEASE); }
+static inline void sccp_device_setPendingDelete(const sccp_device_t * d, boolean_t v) { __atomic_store_n((boolean_t *)&d->pendingDelete, v, __ATOMIC_RELEASE); }
+static inline boolean_t sccp_device_hasActiveChannel(const sccp_device_t * d) { return __atomic_load_n(&d->activeChannelPresent, __ATOMIC_ACQUIRE); }
+
 /*!
  * \brief SCCP Add-On Structure
  * \note This defines the add-ons a.k.a sidecars
@@ -420,6 +433,8 @@ SCCP_API int SCCP_CALL sccp_device_sendReset(devicePtr d, skinny_resetType_t res
 SCCP_API uint8_t SCCP_CALL sccp_device_find_index_for_line(constDevicePtr d, const char *lineName);
 SCCP_API uint8_t SCCP_CALL sccp_device_numberOfChannels(constDevicePtr device);
 SCCP_API boolean_t SCCP_CALL sccp_device_isVideoSupported(constDevicePtr device);
+SCCP_API void SCCP_CALL sccp_device_getCodecSets(constDevicePtr device, skinny_capabilities_t * maybe_capabilities, skinny_capabilities_t * maybe_preferences);
+SCCP_API void SCCP_CALL sccp_device_setCodecSets(devicePtr device, const skinny_capabilities_t * maybe_capabilities, const skinny_capabilities_t * maybe_preferences);
 SCCP_API boolean_t SCCP_CALL sccp_device_check_update(devicePtr device);
 SCCP_INLINE SCCP_CALL int16_t sccp_device_buttonIndex2lineInstance(constDevicePtr d, uint16_t buttonIndex);
 

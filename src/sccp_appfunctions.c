@@ -544,9 +544,9 @@ static int sccp_func_sccpdevice(PBX_CHANNEL_TYPE * chan, NEWCONST char * cmd, ch
 				snprintf(buf, buf_len, "[ %s ]", pbx_str_buffer(lbuf));
 				sccp_free(lbuf);
 			} else if (!strcasecmp(token, "pending_delete")) {
-				sccp_copy_string(buf, d->pendingDelete ? "yes" : "no", buf_len);
+				sccp_copy_string(buf, sccp_device_getPendingDelete(d) ? "yes" : "no", buf_len);
 			} else if (!strcasecmp(token, "pending_update")) {
-				sccp_copy_string(buf, d->pendingUpdate ? "yes" : "no", buf_len);
+				sccp_copy_string(buf, sccp_device_getPendingUpdate(d) ? "yes" : "no", buf_len);
 			} else if (!strcasecmp(token, "peerip")) {                                        // NO-NAT (Ip-Address Associated with the Session->sin)
 				if (d->session) {
 					struct sockaddr_storage sas = { 0 };

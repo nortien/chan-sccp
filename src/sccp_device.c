@@ -395,10 +395,10 @@ void sccp_device_pre_reload(void)
 		sccp_log_and((DEBUGCAT_CONFIG + DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: Setting Device to Pending Delete=1\n", d->id);
 #ifdef CS_SCCP_REALTIME
 		if (!d->realtime) {										/* don't want to reset realtime devices, if they have not changed */
-			d->pendingDelete = 1;
+			sccp_device_setPendingDelete(d, 1);
 		}
 #endif
-		d->pendingUpdate = 0;
+		sccp_device_setPendingUpdate(d, 0);
 		
 		/* clear softkeyset */
 		d->softkeyset = NULL;
@@ -435,18 +435,18 @@ boolean_t sccp_device_check_update(devicePtr device)
 	boolean_t res = FALSE;
 
 	if (d) {
-		//sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_2 "%s (check_update) pendingUpdate: %s, pendingDelete: %s\n", d->id, d->pendingUpdate ? "TRUE" : "FALSE", d->pendingDelete ? "TRUE" : "FALSE");
-		if ((d->pendingUpdate || d->pendingDelete)) {
+		//sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_2 "%s (check_update) pendingUpdate: %s, pendingDelete: %s\n", d->id, sccp_device_getPendingUpdate(d) ? "TRUE" : "FALSE", sccp_device_getPendingDelete(d) ? "TRUE" : "FALSE");
+		if ((sccp_device_getPendingUpdate(d) || sccp_device_getPendingDelete(d))) {
 			do {
 				if (sccp_device_numberOfChannels(d) > 0) {
 					//sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "device: %s check_update, openchannel: %d -> device restart pending.\n", d->id, sccp_device_numberOfChannels(d));
 					break;
 				}
 
-				sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_1 "Device %s needs to be reset because of a change in sccp.conf (Update:%d, Delete:%d)\n", d->id, d->pendingUpdate, d->pendingDelete);
+				sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_1 "Device %s needs to be reset because of a change in sccp.conf (Update:%d, Delete:%d)\n", d->id, sccp_device_getPendingUpdate(d), sccp_device_getPendingDelete(d));
 
-				d->pendingUpdate = 0;
-				sccp_dev_clean_restart(d, (d->pendingDelete) ? TRUE : FALSE);
+				sccp_device_setPendingUpdate(d, 0);
+				sccp_dev_clean_restart(d, (sccp_device_getPendingDelete(d)) ? TRUE : FALSE);
 				res = TRUE;
 			} while (0);
 		}
@@ -468,7 +468,7 @@ void sccp_device_post_reload(void)
 	sccp_log((DEBUGCAT_CONFIG)) (VERBOSE_PREFIX_1 "SCCP: (post_reload)\n");
 
 	SCCP_RWLIST_TRAVERSE_SAFE_BEGIN(&GLOB(devices), d, list) {
-		if (!d->pendingDelete && !d->pendingUpdate) {
+		if (!sccp_device_getPendingDelete(d) && !sccp_device_getPendingUpdate(d)) {
 			continue;
 		}
 		/* check_update() can drop the device's last reference: for a pendingDelete
@@ -685,6 +685,8 @@ devicePtr sccp_device_create(const char * id)
 
 	sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "Init MessageStack\n");
 
+	pbx_mutex_init(&d->codec_lock);
+
 	/* initialize messageStack */
 #ifndef SCCP_ATOMIC
 	pbx_mutex_init(&d->messageStack.lock);
@@ -725,8 +727,8 @@ devicePtr sccp_device_create(const char * id)
 	d->keepalive = d->keepaliveinterval = d->keepalive ? d->keepalive : GLOB(keepalive);
 	d->mwiUpdateRequired = TRUE;
 
-	d->pendingUpdate = 0;
-	d->pendingDelete = 0;
+	sccp_device_setPendingUpdate(d, 0);
+	sccp_device_setPendingDelete(d, 0);
 	return d;
 }
 
@@ -2129,6 +2131,9 @@ void __sccp_device_setActiveChannel(constDevicePtr d, constChannelPtr channel, c
 			sccp_dev_setActiveLine(device, NULL);
 		}
 		sccp_channel_refreplace(&device->active_channel, channel);
+		/* keep the atomic hint in step so cross-thread readers (the session poll loop) do not race the
+		 * pointer store above; it only tells them whether a call is active, to size the poll timeout */
+		__atomic_store_n(&device->activeChannelPresent, device->active_channel ? TRUE : FALSE, __ATOMIC_RELEASE);
 		if (device->active_channel) {
 			sccp_dev_setActiveLine(device, device->active_channel->line);
 			if (device->active_channel->line) {
@@ -2670,6 +2675,7 @@ int __sccp_device_destroy(const void *ptr)
 		sccp_mutex_unlock(&d->messageStack.lock);
 		pbx_mutex_destroy(&d->messageStack.lock);
 #endif
+		pbx_mutex_destroy(&d->codec_lock);
 	}
 	
 	// cleanup variables
@@ -2704,11 +2710,42 @@ int __sccp_device_destroy(const void *ptr)
  * \param device SCCP Device
  * \return result as boolean_t
  */
+/* copy the device's codec sets under the codec lock; either destination may be NULL */
+void sccp_device_getCodecSets(constDevicePtr device, skinny_capabilities_t * maybe_capabilities, skinny_capabilities_t * maybe_preferences)
+{
+	pbx_assert(device != NULL);
+	sccp_device_t *d = (sccp_device_t *) device;									/* discard const: locking only */
+	pbx_mutex_lock(&d->codec_lock);
+	if (maybe_capabilities) {
+		memcpy(maybe_capabilities, &d->capabilities, sizeof(*maybe_capabilities));
+	}
+	if (maybe_preferences) {
+		memcpy(maybe_preferences, &d->preferences, sizeof(*maybe_preferences));
+	}
+	pbx_mutex_unlock(&d->codec_lock);
+}
+
+/* publish new codec sets for the device in one go, under the codec lock; either source may be NULL */
+void sccp_device_setCodecSets(devicePtr d, const skinny_capabilities_t * maybe_capabilities, const skinny_capabilities_t * maybe_preferences)
+{
+	pbx_assert(d != NULL);
+	pbx_mutex_lock(&d->codec_lock);
+	if (maybe_capabilities) {
+		memcpy(&d->capabilities, maybe_capabilities, sizeof(d->capabilities));
+	}
+	if (maybe_preferences) {
+		memcpy(&d->preferences, maybe_preferences, sizeof(d->preferences));
+	}
+	pbx_mutex_unlock(&d->codec_lock);
+}
+
 boolean_t sccp_device_isVideoSupported(constDevicePtr device)
 {
 	boolean_t res = FALSE;
 #ifdef CS_SCCP_VIDEO
-	if (device->capabilities.video[0] != SKINNY_CODEC_NONE) {
+	skinny_capabilities_t capabilities;
+	sccp_device_getCodecSets(device, &capabilities, NULL);
+	if (capabilities.video[0] != SKINNY_CODEC_NONE) {
 		res = TRUE;
 	}
 	sccp_log((DEBUGCAT_CODEC)) (VERBOSE_PREFIX_3 "%s: video support %s\n", device->id, res ? "true" : "false");
@@ -2767,7 +2804,7 @@ int sccp_device_sendReset(devicePtr d, skinny_resetType_t reset_type)
 	msg->data.Reset.lel_resetType = htolel(reset_type);
 	sccp_session_send(d, msg);
 
-	d->pendingUpdate = 0;
+	sccp_device_setPendingUpdate(d, 0);
 	return 1;
 }
 

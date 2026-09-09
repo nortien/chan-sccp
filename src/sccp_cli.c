@@ -998,15 +998,18 @@ static int sccp_show_device(int fd, sccp_cli_totals_t *totals, struct mansession
 		pbx_log(LOG_WARNING, "Failed to get device %s\n", dev);
 		CLI_AMI_RETURN_ERROR(fd, s, m, "Can't find settings for device %s\n", dev);		/* explicit return */
 	}
+	skinny_capabilities_t caps;
+	skinny_capabilities_t prefs;
+	sccp_device_getCodecSets(d, &caps, &prefs);
 	char apref_buf[256];
 	char acap_buf[512];
-	sccp_codec_multiple2str(apref_buf, sizeof(apref_buf) - 1, d->preferences.audio, ARRAY_LEN(d->preferences.audio));
-	sccp_codec_multiple2str(acap_buf, sizeof(acap_buf) - 1, d->capabilities.audio, ARRAY_LEN(d->capabilities.audio));
+	sccp_codec_multiple2str(apref_buf, sizeof(apref_buf) - 1, prefs.audio, ARRAY_LEN(prefs.audio));
+	sccp_codec_multiple2str(acap_buf, sizeof(acap_buf) - 1, caps.audio, ARRAY_LEN(caps.audio));
 #if CS_SCCP_VIDEO
 	char vpref_buf[256];
 	char vcap_buf[512];
-	sccp_codec_multiple2str(vpref_buf, sizeof(vpref_buf) - 1, d->preferences.video, ARRAY_LEN(d->preferences.video));
-	sccp_codec_multiple2str(vcap_buf, sizeof(vcap_buf) - 1, d->capabilities.video, ARRAY_LEN(d->capabilities.video));
+	sccp_codec_multiple2str(vpref_buf, sizeof(vpref_buf) - 1, prefs.video, ARRAY_LEN(prefs.video));
+	sccp_codec_multiple2str(vcap_buf, sizeof(vcap_buf) - 1, caps.video, ARRAY_LEN(caps.video));
 #endif
 	sccp_print_ha(ha_buf, DEFAULT_PBX_STR_BUFFERSIZE, d->ha);
 
@@ -1127,8 +1130,8 @@ static int sccp_show_device(int fd, sccp_cli_totals_t *totals, struct mansession
 	CLI_AMI_OUTPUT_PARAM("Custom Background Thumbnail", CLI_AMI_LIST_WIDTH, "%s", d->backgroundTN ? d->backgroundTN : "---");
 	CLI_AMI_OUTPUT_PARAM("Custom Ring Tone",	CLI_AMI_LIST_WIDTH, "%s", d->ringtone ? d->ringtone : "---");
 	CLI_AMI_OUTPUT_BOOL("Use Placed Calls",		CLI_AMI_LIST_WIDTH, d->useRedialMenu);
-	CLI_AMI_OUTPUT_BOOL("PendingUpdate",		CLI_AMI_LIST_WIDTH, d->pendingUpdate);
-	CLI_AMI_OUTPUT_BOOL("PendingDelete",		CLI_AMI_LIST_WIDTH, d->pendingDelete);
+	CLI_AMI_OUTPUT_BOOL("PendingUpdate",		CLI_AMI_LIST_WIDTH, sccp_device_getPendingUpdate(d));
+	CLI_AMI_OUTPUT_BOOL("PendingDelete",		CLI_AMI_LIST_WIDTH, sccp_device_getPendingDelete(d));
 #ifdef CS_SCCP_CONFERENCE
 	CLI_AMI_OUTPUT_BOOL("allow_conference",		CLI_AMI_LIST_WIDTH, d->allow_conference);
 	CLI_AMI_OUTPUT_BOOL("conf_play_general_announce", CLI_AMI_LIST_WIDTH, d->conf_play_general_announce);
@@ -2866,7 +2869,7 @@ static int sccp_remove_line_from_device(int fd, int argc, char *argv[])
 		AUTO_RELEASE(sccp_line_t, line, sccp_line_find_byname(argv[4], FALSE));                                        // don't create new realtime lines by searching for them
 		if(line) {
 			sccp_buttonconfig_t * config = NULL;
-			d->pendingUpdate = 1;
+			sccp_device_setPendingUpdate(d, 1);
 			SCCP_LIST_LOCK(&d->buttonconfig);
 			SCCP_LIST_TRAVERSE_SAFE_BEGIN(&d->buttonconfig, config, list) {
 				if (config->type == LINE && sccp_strequals(config->button.line.name,line->name)) {
@@ -2924,13 +2927,13 @@ static int sccp_add_line_to_device(int fd, int argc, char *argv[])
 		if (!l) {
 			pbx_log(LOG_ERROR, "Error: Line %s not found\n", argv[4]);
 		}
- 		d->pendingUpdate = 1;
+ 		sccp_device_setPendingUpdate(d, 1);
 		if (sccp_config_addButton(&d->buttonconfig, -1, LINE, l->name, NULL, NULL) == SCCP_CONFIG_CHANGE_CHANGED) {
 			pbx_cli(fd, "Line %s has been added to device %s\n", l->name, d->id);
 			sccp_device_check_update(d);
 			res = RESULT_SUCCESS;
 		} else {
-	 		d->pendingUpdate = 0;;
+	 		sccp_device_setPendingUpdate(d, 0);
 		}
 	} else {
 		pbx_log(LOG_ERROR, "Error: Device %s not found\n", argv[3]);
@@ -3096,7 +3099,7 @@ static int sccp_cli_reload(int fd, int argc, char *argv[])
 					sccp_log((DEBUGCAT_CORE)) ("%s: device has %s\n", device->id, change ? "major changes -> restarting device" : "no major changes -> skipping restart (minor changes applied)");
 					pbx_cli(fd, "%s: device has %s\n", device->id, change ? "major changes -> restarting device" : "no major changes -> restart not required");
 					if (change == SCCP_CONFIG_NEEDDEVICERESET) {
-						device->pendingUpdate = 1;
+						sccp_device_setPendingUpdate(device, 1);
 						sccp_device_check_update(device);				// Will cleanup after reload and restart the device if necessary
 					}
 #ifdef CS_SCCP_REALTIME
@@ -3105,7 +3108,7 @@ static int sccp_cli_reload(int fd, int argc, char *argv[])
 					}
 #endif
 				} else {
-					device->pendingDelete = 1;
+					sccp_device_setPendingDelete(device, 1);
 				}
 
 				returnval = RESULT_SUCCESS;
@@ -3178,7 +3181,7 @@ static int sccp_cli_reload(int fd, int argc, char *argv[])
 										change |= sccp_config_applyDeviceConfiguration(device, v);
 									}
 								}
-								device->pendingUpdate = 1;
+								sccp_device_setPendingUpdate(device, 1);
 								sccp_device_check_update(device);				// Will cleanup after reload and restart the device if necessary
 #ifdef CS_SCCP_REALTIME
 								if (device->realtime && dv) {
@@ -3737,7 +3740,7 @@ static int sccp_set_object(int fd, int argc, char *argv[])
 			res = sccp_config_applyDeviceConfiguration(device, &variable);
 
 			if (res & SCCP_CONFIG_NEEDDEVICERESET) {
-				device->pendingUpdate = 1;
+				sccp_device_setPendingUpdate(device, 1);
 			}
 		}
 	} else if (sccp_strcaseequals("fallback", argv[2])) {
