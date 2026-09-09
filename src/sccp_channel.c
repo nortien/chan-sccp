@@ -189,10 +189,12 @@ channelPtr sccp_channel_allocate(constLinePtr l, constDevicePtr device)
 	}
 	if (sccp_strlen_zero(refLine->name) || sccp_strlen_zero(refLine->context) || !pbx_context_find(refLine->context)) {
 		pbx_log(LOG_ERROR, "SCCP: line with empty name, empty context or non-existent context provided, aborting creation of new channel\n");
+		sccp_line_release(&refLine);
 		return NULL;
 	}
 	if (device && !device->session) {
 		pbx_log(LOG_ERROR, "SCCP: Tried to open channel on device %s without a session\n", device->id);
+		sccp_line_release(&refLine);
 		return NULL;
 	}
 
@@ -883,6 +885,16 @@ int sccp_channel_receiveChannelOpen(sccp_device_t *d, sccp_channel_t *c)
 
 	if(c->owner && !pbx_check_hangup_locked(c->owner)) {
 		sccp_rtp_runCallback(audio, SCCP_RTP_RECEPTION, c);
+#if ASTERISK_VERSION_GROUP >= 108
+		if(audio->directMedia) {
+			/* The phone hands out a fresh receive port every time its stream is reopened (after
+			 * hold/resume for example). In direct rtp mode the peer was told to send to the previous
+			 * port and nothing else would tell it about the new one, so ask the bridge to hand the
+			 * endpoint addresses out again now that ours is known. */
+			sccp_log((DEBUGCAT_RTP))(VERBOSE_PREFIX_3 "%s: (receiveChannelOpen) directrtp: have the bridge update the peer with our new receive address\n", d->id);
+			iPbx.queue_control(c->owner, AST_CONTROL_UPDATE_RTP_PEER);
+		}
+#endif
 		if(c->calltype != SKINNY_CALLTYPE_INBOUND) {
 			if(d->nat >= SCCP_NAT_ON) {
 				sccp_channel_startHolePunch(c);
@@ -1215,7 +1227,7 @@ void sccp_channel_closeMultiMediaReceiveChannel(constChannelPtr channel, boolean
 		return;
 	}
 	// stop transmitting before closing receivechannel (\note maybe we should not be doing this here)
-	sccp_channel_stopMediaTransmission(channel, KeepPortOpen);
+	sccp_channel_stopMultiMediaTransmission(channel, KeepPortOpen);		// this is the video/multimedia path; stop the multimedia (not audio) transmission
 
 	if(sccp_rtp_getState(video, SCCP_RTP_RECEPTION)) {
 		sccp_log((DEBUGCAT_RTP)) (VERBOSE_PREFIX_3 "%s: Close multimedia receive channel on device %s (KeepPortOpen: %s)\n", channel->designator, d->id, KeepPortOpen ? "YES" : "NO");
@@ -1535,7 +1547,7 @@ gcc_inline void sccp_channel_schedule_hangup(constChannelPtr channel, int timeou
  */
 gcc_inline void sccp_channel_schedule_digittimeout(constChannelPtr channel, int timeout)
 {
-	sccp_channel_t *c = sccp_channel_retain(channel);
+	AUTO_RELEASE(sccp_channel_t, c , sccp_channel_retain(channel));
 
 	/* only schedule if allowed and not already scheduled */
 	if (c && c->scheduler.hangup_id == -1 && !ATOMIC_FETCH(&c->scheduler.deny, &c->scheduler.lock)) {	
@@ -1545,7 +1557,6 @@ gcc_inline void sccp_channel_schedule_digittimeout(constChannelPtr channel, int 
 		} else {
 			iPbx.sched_replace_ref(&c->scheduler.digittimeout_id, timeout * 1000, sccp_pbx_sched_dial, c);
 		}
-		sccp_channel_release(&c);
 	}
 }
 
@@ -1570,14 +1581,13 @@ void sccp_channel_stop_and_deny_scheduled_tasks(constChannelPtr channel)
 
 gcc_inline void sccp_channel_schedule_cfwd_noanswer(constChannelPtr channel, int timeout)
 {
-	sccp_channel_t * c = sccp_channel_retain(channel);
+	AUTO_RELEASE(sccp_channel_t, c , sccp_channel_retain(channel));
 	/* only schedule if allowed and not already scheduled */
 	if(c && c->scheduler.cfwd_noanswer_id == -1 && !ATOMIC_FETCH(&c->scheduler.deny, &c->scheduler.lock)) {
 		sccp_log((DEBUGCAT_CORE))(VERBOSE_PREFIX_3 "%s: schedule cfwd_noanswer %d\n", c->designator, timeout);
 		if(c->scheduler.cfwd_noanswer_id == -1) {
 			iPbx.sched_add_ref(&c->scheduler.cfwd_noanswer_id, timeout * 1000, sccp_pbx_cfwdnoanswer_cb, c);
 		}
-		sccp_channel_release(&c);
 	}
 }
 
@@ -2368,7 +2378,7 @@ int __sccp_channel_destroy(const void * data)
 		sccp_rtp_destroy(channel);
 	}
 
-	if (channel->privateData->callInfo) {
+	if (channel->privateData && channel->privateData->callInfo) {
 		iCallInfo.Destructor(&channel->privateData->callInfo);
 	}
 
@@ -2388,8 +2398,10 @@ int __sccp_channel_destroy(const void * data)
 	/* destroy immutables, by casting away const */
 	sccp_free(*(char **)&channel->musicclass);
 	sccp_free(*(char **)&channel->designator);
-	SCCP_LIST_HEAD_DESTROY(&(channel->privateData->cleanup_jobs));
-	sccp_free(*(struct sccp_private_channel_data **)&channel->privateData);
+	if (channel->privateData) {
+		SCCP_LIST_HEAD_DESTROY(&(channel->privateData->cleanup_jobs));
+		sccp_free(*(struct sccp_private_channel_data **)&channel->privateData);
+	}
 	sccp_line_release((sccp_line_t **)&channel->line);
 	/* */
 
@@ -2861,6 +2873,7 @@ int sccp_channel_forward(constChannelPtr sccp_channel_parent, constLineDevicePtr
 	/* ok the number exist. allocate the asterisk channel */
 	if (!sccp_pbx_channel_allocate(sccp_forwarding_channel, NULL, sccp_channel_parent->owner))
 	{
+		sccp_channel_release(&sccp_forwarding_channel->parentChannel);
 		return -1;
 	}
 	/* Update rtp setting to match predecessor */

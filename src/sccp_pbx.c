@@ -235,7 +235,7 @@ int sccp_pbx_call(channelPtr c, const char * dest, int timeout)
 		   This would help users dial from call history lists on other phones, which do not have enbloc dialing,
 		   when using shared lines. */
 		int length = sccp_strlen(cid_num);
-		if (length && (length + 2  < StationMaxDirnumSize) && ('\0' == cid_num[0])) {
+		if (length && (length + 2  < StationMaxDirnumSize) && ('0' == cid_num[0])) {
 			suffixedNumber[length + 0] = GLOB(digittimeoutchar);
 			suffixedNumber[length + 1] = '\0';
 		}
@@ -663,6 +663,8 @@ int sccp_pbx_remote_answer(constChannelPtr channel)
 		PBX_CHANNEL_TYPE * destination = NULL;
 		if(sccp_strlen_zero(destinationChannelName) || !iPbx.getChannelByName(destinationChannelName, &destination)) {
 			pbx_log(LOG_NOTICE, "%s: (%s) Could not retrieve channel for destination: %s", c->designator, __func__, destinationChannelName);
+			pbx_channel_unref(forwarder);
+			pbx_channel_unref(tmp_channel);
 			return -2;
 		}
 		/*
@@ -693,6 +695,7 @@ int sccp_pbx_remote_answer(constChannelPtr channel)
 					if(destination) {
 						pbx_channel_unref(destination);
 					}
+					pbx_channel_unref(forwarder);
 					res = -3;
 					break;
 				}
