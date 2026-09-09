@@ -1850,7 +1850,7 @@ static PBX_CHANNEL_TYPE *sccp_astwrap_request(const char *type, struct ast_forma
 #ifdef CS_SCCP_VIDEO
 	memset(&channel->remoteCapabilities.video, 0, sizeof(channel->remoteCapabilities.video));
 	if (videoCapabilities[0] != SKINNY_CODEC_NONE) {
-		memcpy(channel->remoteCapabilities.video, videoCapabilities, ARRAY_LEN(videoCapabilities));
+		memcpy(channel->remoteCapabilities.video, videoCapabilities, sizeof(channel->remoteCapabilities.video));
 	} else if (video_codec) {
 		channel->remoteCapabilities.video[0] = video_codec;
 	}
@@ -2372,7 +2372,7 @@ static int sccp_astwrap_callerid_number(PBX_CHANNEL_TYPE *pbx_chan, char **cid_n
 static int sccp_astwrap_callerid_ton(PBX_CHANNEL_TYPE *pbx_chan, int *cid_ton)
 {
 	if (pbx_chan && ast_channel_caller(pbx_chan)->id.number.valid) {
-		*cid_ton = ast_channel_caller(pbx_chan)->ani.number.plan;
+		*cid_ton = ast_channel_caller(pbx_chan)->id.number.plan;
 		return *cid_ton;
 	}
 	return 0;
@@ -2628,9 +2628,7 @@ static boolean_t sccp_astwrap_getChannelByName(const char *name, PBX_CHANNEL_TYP
 	if (!ast) {
 		return FALSE;
 	}
-	pbx_channel_lock(ast);
-	*pbx_channel = pbx_channel_ref(ast);
-	pbx_channel_unlock(ast);
+	*pbx_channel = ast;							/* transfer the reference from ast_channel_get_by_name */
 	return TRUE;
 }
 
@@ -2727,7 +2725,7 @@ static boolean_t sccp_astwrap_setReadFormat(constChannelPtr channel, skinny_code
 	if (ast_format == ast_format_none)
 		return FALSE;
 
-	ast_set_write_format(channel->owner, ast_format);
+	ast_set_read_format(channel->owner, ast_format);
 	if (NULL != channel->rtp.audio.instance) {
 		ast_rtp_instance_set_read_format(channel->rtp.audio.instance, ast_format);
 	}
@@ -3152,7 +3150,7 @@ static int sccp_pbx_sendHTML(PBX_CHANNEL_TYPE * ast, int subclass, const char *d
 			} else {
 				fr.subclass.integer = AST_HTML_NOSUPPORT;
 			}
-			ast_queue_frame(ast, ast_frisolate(&fr));
+			ast_queue_frame(ast, &fr);
 			res = 0;
 		}
 	}

@@ -651,7 +651,6 @@ static boolean_t sccp_astgenwrap_handleHangup(constChannelPtr channel, const cha
 				sccp_log(DEBUGCAT_PBX)("%s: (%s): Hangup Queued\n", c->designator, hanguptype);
 				pbx_channel_unlock(pbx_channel);
 				res = ast_queue_hangup(pbx_channel) ? FALSE : TRUE;
-				res = TRUE;
 				break;
 			}
 			if(SCCP_CHANNELSTATE_IsSettingUp(c->state) || SCCP_CHANNELSTATE_IsConnected(c->state) || iPbx.channel_is_bridged(c)) {
@@ -893,7 +892,7 @@ void sccp_astwrap_connectedline(sccp_channel_t * channel, const void *data, size
 				SCCP_CALLINFO_ORIG_CALLEDPARTY_REDIRECT_REASON, tmpOrigCalledPartyRedirectReason,
 
 				SCCP_CALLINFO_LAST_REDIRECTINGPARTY_NUMBER, tmpCallingNumber,
-				SCCP_CALLINFO_LAST_REDIRECTINGPARTY_NAME, tmpCallingNumber,
+				SCCP_CALLINFO_LAST_REDIRECTINGPARTY_NAME, tmpCallingName,
 				SCCP_CALLINFO_LAST_REDIRECT_REASON, tmpLastRedirectReason,
 
 				SCCP_CALLINFO_KEY_SENTINEL);
@@ -1327,7 +1326,7 @@ int sccp_astgenwrap_channel_write(PBX_CHANNEL_TYPE * ast, const char *funcname, 
 			pbx_callerid_parse((char *) value, &name, &num);
 			sccp_channel_set_callingparty(c, name, num);
 			sccp_channel_display_callInfo(c);
-			pbx_builtin_setvar_helper(c->owner, "SETCALLINGPARTY", pbx_strdup(value));
+			pbx_builtin_setvar_helper(c->owner, "SETCALLINGPARTY", value);
 		} else if (!strcasecmp(args, "CalledParty")) {
 			if(!value || sccp_strlen_zero(value)) {
 				pbx_log(LOG_ERROR, "No valid party information provided: '%s'\n", value);
@@ -1337,7 +1336,7 @@ int sccp_astgenwrap_channel_write(PBX_CHANNEL_TYPE * ast, const char *funcname, 
 			pbx_callerid_parse((char *) value, &name, &num);
 			sccp_channel_set_calledparty(c, name, num);
 			sccp_channel_display_callInfo(c);
-			pbx_builtin_setvar_helper(c->owner, "SETCALLEDPARTY", pbx_strdup(value));
+			pbx_builtin_setvar_helper(c->owner, "SETCALLEDPARTY", value);
 		} else if (!strcasecmp(args, "OriginalCallingParty")) {
 			if(!value || sccp_strlen_zero(value)) {
 				pbx_log(LOG_ERROR, "No valid party information provided: '%s'\n", value);
@@ -1347,7 +1346,7 @@ int sccp_astgenwrap_channel_write(PBX_CHANNEL_TYPE * ast, const char *funcname, 
 			pbx_callerid_parse((char *) value, &name, &num);
 			sccp_channel_set_originalCallingparty(c, name, num);
 			sccp_channel_display_callInfo(c);
-			pbx_builtin_setvar_helper(c->owner, "SETORIGCALLINGPARTY", pbx_strdup(value));
+			pbx_builtin_setvar_helper(c->owner, "SETORIGCALLINGPARTY", value);
 		} else if (!strcasecmp(args, "OriginalCalledParty")) {
 			if(!value || sccp_strlen_zero(value)) {
 				pbx_log(LOG_ERROR, "No valid party information provided: '%s'\n", value);
@@ -1357,7 +1356,7 @@ int sccp_astgenwrap_channel_write(PBX_CHANNEL_TYPE * ast, const char *funcname, 
 			pbx_callerid_parse((char *) value, &name, &num);
 			sccp_channel_set_originalCalledparty(c, name, num);
 			sccp_channel_display_callInfo(c);
-			pbx_builtin_setvar_helper(c->owner, "SETORIGCALLEDPARTY", pbx_strdup(value));
+			pbx_builtin_setvar_helper(c->owner, "SETORIGCALLEDPARTY", value);
 		} else if (!strcasecmp(args, "microphone")) {
 			if (!value || sccp_strlen_zero(value) || !sccp_true(value)) {
 				c->setMicrophone(c, FALSE);
