@@ -118,10 +118,17 @@ static const sccp_line_t * sccp_sk_get_retained_line(constDevicePtr d, constLine
  */
 static void sccp_sk_dial(const sccp_softkeyMap_cb_t * const softkeyMap_cb, constDevicePtr d, constLinePtr l, const uint32_t lineInstance, channelPtr c)
 {
-	sccp_log((DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_3 "%s: SoftKey Dial Pressed\n", DEV_ID_LOG(d));
+	sccp_log((DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_3 "%s: SoftKey Dial Pressed (channel:%s, state:%s, action:%s)\n", DEV_ID_LOG(d), c ? c->designator : "<none>", c ? sccp_channelstate2str(c->state) : "-",
+				      c ? sccp_softswitch2str(c->softswitch_action) : "-");
 	if (c && !iPbx.getChannelPbx(c)) {									// Prevent dialling if in an inappropriate state.
-		/* Only handle this in DIALING state. AFAIK GETDIGITS is used only for call forward and related input functions. (-DD) */
-		if (c->state == SCCP_CHANNELSTATE_DIGITSFOLL || c->softswitch_action == SCCP_SOFTSWITCH_GETFORWARDEXTEN) {
+		/* Submit the collected number. DIGITSFOLL is normal dialling; a feature that catches a number
+		 * (call forward, directed pickup, meetme, barge, conference room) instead leaves its softswitch
+		 * action pending on the channel while the user types - the channel state is no marker there,
+		 * it is back to OFFHOOK by the time the digits arrive. The Dial softkey used to complete only
+		 * call forward, so on pickup/meetme/barge/conference nothing happened when it was pressed and
+		 * the user had to press '#' or wait for the digit timeout instead. */
+		if (c->state == SCCP_CHANNELSTATE_DIGITSFOLL
+		    || (c->softswitch_action != SCCP_SOFTSWITCH_DIAL && c->softswitch_action != SCCP_SOFTSWITCH_ENDCALLFORWARD)) {
 			sccp_pbx_softswitch(c);
 		}
 	}

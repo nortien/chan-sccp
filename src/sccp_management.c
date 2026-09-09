@@ -1080,23 +1080,43 @@ static int sccp_asterisk_managerHookHelper(int category, const char *event, char
 				const char *extension = astman_get_header(&m, PARKING_SLOT);
 				int exten = sccp_atoi(extension, strlen(extension));
 
-				/*
-								//const char *from = astman_get_header(&m, PARKING_FROM);
-								if (sccp_strcaseequals("ParkedCall", event) && !sccp_strlen_zero(from)) {
-									AUTO_RELEASE(sccp_line_t, l, sccp_line_find_byname(from, FALSE));
-									if (l) {
-										sccp_linedevice_t * ld = NULL;
-										char extstr[20] = "";
-										snprintf(extstr, sizeof(extstr), "%c%c %.16s", 128, SKINNY_LBL_CALL_PARK_AT, extension);
-										SCCP_LIST_LOCK(&l->devices);
-										SCCP_LIST_TRAVERSE(&l->devices, ld, list) {
-											if (ld->line == l) {
-												sccp_dev_displayprinotify(ld->device, extstr, SCCP_MESSAGE_PRIORITY_TIMEOUT, 20);
-											}
-										}
-										SCCP_LIST_UNLOCK(&l->devices);
-									}
-								}*/
+				/* Tell the phone that parked the call where it landed ("Call Park At <slot>"), the way
+				 * a real Cisco phone does. The parker is the ParkerDialString ("SCCP/<line>"); only SCCP
+				 * parkers have a phone to notify. Snapshot the line's devices under the list lock and send
+				 * after unlocking - this runs on the manager-hook thread, so nothing that could take
+				 * another lock is done while holding l->devices. */
+				if (sccp_strcaseequals("ParkedCall", event) && !sccp_strlen_zero(extension)) {
+					const char *parker = astman_get_header(&m, "ParkerDialString");
+					if (parker && !strncasecmp(parker, "SCCP/", 5)) {
+						char linename[64] = "";
+						sccp_copy_string(linename, parker + 5, sizeof(linename));
+						for (char *p = linename; *p; p++) {					/* drop any -callid / @context / /subid suffix */
+							if (*p == '/' || *p == '@' || *p == '-') {
+								*p = '\0';
+								break;
+							}
+						}
+						AUTO_RELEASE(sccp_line_t, l, sccp_strlen_zero(linename) ? NULL : sccp_line_find_byname(linename, FALSE));
+						if (l) {
+							char parkmsg[40] = "";
+							snprintf(parkmsg, sizeof(parkmsg), SKINNY_DISP_CALL_PARK_AT " %.16s", extension);
+							sccp_device_t *notify[8] = { 0 };
+							int numnotify = 0;
+							sccp_linedevice_t * ld = NULL;
+							SCCP_LIST_LOCK(&l->devices);
+							SCCP_LIST_TRAVERSE(&l->devices, ld, list) {
+								if (ld->device && numnotify < (int)ARRAY_LEN(notify) && (notify[numnotify] = sccp_device_retain(ld->device))) {
+									numnotify++;
+								}
+							}
+							SCCP_LIST_UNLOCK(&l->devices);
+							for (int i = 0; i < numnotify; i++) {
+								sccp_dev_displayprinotify(notify[i], parkmsg, SCCP_MESSAGE_PRIORITY_TIMEOUT, 10);
+								sccp_device_release(&notify[i]);
+							}
+						}
+					}
+				}
 				if (parkinglot && exten) {
 					if (sccp_strcaseequals("ParkedCall", event)) {
 						iParkingLot.addSlot(parkinglot, exten, &m);

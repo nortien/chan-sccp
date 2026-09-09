@@ -233,7 +233,13 @@ static int sccp_feat_perform_pickup(constDevicePtr d, channelPtr c, PBX_CHANNEL_
 			sccp_event_fire(event);
 		}
 		sccp_log((DEBUGCAT_FEATURE))(VERBOSE_PREFIX_3 "%s: (perform_pickup) channel:%s, modeanser: %s\n", DEV_ID_LOG(d), c->designator, answer ? "yes" : "no");
-		if(answer) {
+		/* The picked-up call can already be gone again by now: whoever owned the target (a Dial, an Originate) may
+		 * react to the masquerade by hanging it up, which ran our hangup callback and sent the phone on-hook for
+		 * this callid. Re-creating the call on the phone after that (RINGIN/OFFHOOK callstates, answer) leaves a
+		 * dead call window it cannot close. */
+		if(c->isHangingUp || pbx_check_hangup_locked(c->owner)) {
+			pbx_log(LOG_NOTICE, "%s: (perform_pickup) picked up call %s was hung up during the pickup, not answering it\n", DEV_ID_LOG(d), c->designator);
+		} else if(answer) {
 			/* emulate previous indications, before signalling connected */
 			sccp_device_sendcallstate(d, lineInstance, c->callid, SKINNY_CALLSTATE_RINGIN, SKINNY_CALLPRIORITY_LOW, SKINNY_CALLINFO_VISIBILITY_DEFAULT);
 			sccp_device_sendcallstate(d, lineInstance, c->callid, SKINNY_CALLSTATE_OFFHOOK, SKINNY_CALLPRIORITY_LOW, SKINNY_CALLINFO_VISIBILITY_DEFAULT);
