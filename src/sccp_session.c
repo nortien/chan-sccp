@@ -284,9 +284,16 @@ int sccp_session_waitForPendingRequests(sccp_session_t * s)
 	while(s->requestsInFlight) {
 		sccp_log(DEBUGCAT_SOCKET)(VERBOSE_PREFIX_3 "%s: Waiting for %d Pending Requests!\n", s->designator, s->requestsInFlight);
 		if(pbx_cond_timedwait(&s->pendingRequest, &s->lock, &timeout_spec) == ETIMEDOUT) {
+			/* Report the count, then clear it. This returned s->requestsInFlight
+			 * after zeroing it, so it answered 0 on timeout just as it does on
+			 * success and callers could never tell the two apart. They test the
+			 * result to decide whether to go ahead with answering the call, so the
+			 * timeout was detected, logged, and then ignored. The loop only runs
+			 * while the count is non-zero, so this is always a truthy value. */
+			int pending = s->requestsInFlight;
 			pbx_log(LOG_WARNING, "%s: waitForPendingRequests timed out!\n", s->designator);
 			s->requestsInFlight = 0;
-			return s->requestsInFlight;
+			return pending;
 		}
 	}
 	return 0;
@@ -752,6 +759,28 @@ gcc_inline void recalc_wait_time(sccp_session_t *s)
 		}
 	}
        s->keepAlive = (uint16_t)(keepAlive * keepaliveAdditionalTimePercent);
+
+       /* Then raise it to follow the interval the phone actually negotiated, because
+	* the model list above is not a statement about any phone's timekeeping. It is a
+	* list of models somebody added over the years, and a phone that is missing from
+	* it gets a third of the slack of one that is on it. Measured on the bench with
+	* keepalive 60: a 7975 reports every 46 seconds and is tolerated to 72, so it has
+	* 26 seconds of room, while a 7962 reports every 54 seconds and is tolerated to
+	* 62, leaving 8. Neither number was chosen for those phones; only membership of
+	* the list separates them, and 8 seconds of jitter is reachable on a link shared
+	* with whatever is plugged into the phone's PC port. That is the situation
+	* upstream report chan-sccp/chan-sccp#591 describes: keepalives run late, the
+	* session is reaped, and the phone's reconnect lands in the token handling.
+	*
+	* Half again the reporting interval, and only ever upward, so no device can come
+	* out of here with less tolerance than the model list already gave it. The 7975
+	* above keeps its 72; the 7962 goes from 62 to 81. */
+       if(keepAliveInterval > 0) {
+	       uint16_t derived = (uint16_t)(keepAliveInterval * 1.5f);
+	       if(derived > s->keepAlive) {
+		       s->keepAlive = derived;
+	       }
+       }
        //s->keepAliveInterval = (uint16_t)(keepAliveInterval * KEEPALIVE_ADDITIONAL_PERCENT_SESSION);
        s->keepAliveInterval = (uint16_t)keepAliveInterval;
 
@@ -1280,6 +1309,11 @@ int sccp_session_send2(constSessionPtr session, sccp_msg_t * msg)
 	uint8_t * bufAddr = NULL;
 
 	if (s && s->session_stop) {
+		/* This function owns the message on every path: the failure just below frees
+		 * it before returning, and so does the success path at the end. These two
+		 * early exits did not, so a message handed to a stopping session, or one
+		 * carrying an unrecognised id, was leaked. */
+		sccp_free(msg);
 		return -2;
 	}
 
@@ -1307,6 +1341,7 @@ int sccp_session_send2(constSessionPtr session, sccp_msg_t * msg)
 	if(msginfo) {
 		if(msginfo->messageId != msgid) {
 			pbx_log(LOG_ERROR, "%s: (session_send2) messageId %d (0x%x) unknown. matched:0x%x discarding message.\n", DEV_ID_LOG(s->device), msgid, msgid, msginfo->messageId);
+			sccp_free(msg);
 			return -4;
 		}
 		if(msginfo->type == SKINNY_MSGTYPE_REQUEST) {
