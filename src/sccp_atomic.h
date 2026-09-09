@@ -29,7 +29,10 @@
 #ifdef SCCP_BUILTIN_CAS32
 #define CAS32(_a,_b,_c, _d) 		__sync_val_compare_and_swap(_a, _b, _c)
 #else
-#define CAS32(_a,_b,_c, _d) 		AO_compare_and_swap(_a, _b, _c)
+/* Return the OLD value, matching __sync_val_compare_and_swap above (and what
+ * sccp_refcount_release expects). AO_compare_and_swap only returns a 0/1 success
+ * flag, which made the release loop spin forever on the libatomic_ops path. */
+#define CAS32(_a,_b,_c, _d) 		AO_fetch_compare_and_swap(_a, _b, _c)
 #endif
 
 #ifdef SCCP_BUILTIN_CAS_PTR

@@ -80,15 +80,15 @@ int32_t sccp_parse_debugline(char * arguments[], int startat, int argc, int32_t 
 				new_debug_value = 0;
 				for (i = 0; i < ARRAY_LEN(sccp_debug_categories); i++) {
 					if (!subtract) {
-						new_debug_value += sccp_debug_categories[i].category;
+						new_debug_value |= sccp_debug_categories[i].category;
 					}
 				}
 			} else {
 				// parse comma separated debug_var
-				boolean_t matched   = FALSE;
 				char *    tokenrest = NULL;
 				char *    token     = strtok_r(argument, delimiters, &tokenrest);
 				while (token != NULL) {
+					boolean_t matched = FALSE;
 					// match debug level name to enum
 					for (i = 0; i < ARRAY_LEN(sccp_debug_categories); i++) {
 						if (strcasecmp(token, sccp_debug_categories[i].key) == 0) {
@@ -142,7 +142,7 @@ char * sccp_get_debugcategories(int32_t debugvalue)
 				// strlcpy(res, sccp_debug_categories[i].key, new_size);
 				snprintf(res, new_size - 1, "%s", sccp_debug_categories[i].key);
 			} else {
-				snprintf(res + strlen(res), new_size - 1, ",%s", sccp_debug_categories[i].key);
+				snprintf(res + strlen(res), new_size - strlen(res), ",%s", sccp_debug_categories[i].key);
 			}
 
 			size = new_size;

@@ -390,8 +390,10 @@ int sccp_parseComposedId(const char *labelString, unsigned int maxLength, sccp_s
 						res++;
 						break;
 					default:
-						extension[i] = *stringIterator;
-						i++;
+						if (i < SCCP_MAX_EXTENSION - 1) {
+							extension[i] = *stringIterator;
+							i++;
+						}
 						break;
 				}
 				break;
@@ -445,8 +447,10 @@ int sccp_parseComposedId(const char *labelString, unsigned int maxLength, sccp_s
 						res++;
 						break;
 					default:
-						subscriptionId->number[i] = *stringIterator;
-						i++;
+						if (i < sizeof(subscriptionId->number) - 1) {
+							subscriptionId->number[i] = *stringIterator;
+							i++;
+						}
 						break;
 				}
 				break;
@@ -472,8 +476,10 @@ int sccp_parseComposedId(const char *labelString, unsigned int maxLength, sccp_s
 						res++;
 						break;
 					default:
-						subscriptionId->name[i] = *stringIterator;
-						i++;
+						if (i < sizeof(subscriptionId->name) - 1) {
+							subscriptionId->name[i] = *stringIterator;
+							i++;
+						}
 						break;
 				}
 				break;
@@ -493,8 +499,10 @@ int sccp_parseComposedId(const char *labelString, unsigned int maxLength, sccp_s
 						res++;
 						break;
 					default:
-						subscriptionId->label[i] = *stringIterator;
-						i++;
+						if (i < sizeof(subscriptionId->label) - 1) {
+							subscriptionId->label[i] = *stringIterator;
+							i++;
+						}
 						break;
 				}
 				break;
@@ -508,8 +516,10 @@ int sccp_parseComposedId(const char *labelString, unsigned int maxLength, sccp_s
 						res++;
 						break;
 					default:
-						subscriptionId->aux[i] = *stringIterator;
-						i++;
+						if (i < sizeof(subscriptionId->aux) - 1) {
+							subscriptionId->aux[i] = *stringIterator;
+							i++;
+						}
 						break;
 				}
 				break;
@@ -680,6 +690,7 @@ gcc_inline void sccp_camelcase(char * instr)
 		if (!isalnum(instr[i])) {
 			i++;
 			capsNext = TRUE;
+			continue;							/* re-check for end of string before reading the next byte */
 		}
 		instr[j++] = capsNext ? toupper(instr[i++]) : tolower(instr[i++]);
 		capsNext   = FALSE;
@@ -810,7 +821,7 @@ int sccp_apply_ha_default(const struct sccp_ha *ha, const struct sockaddr_storag
 		struct sockaddr_storage mapped_addr;
 		const struct sockaddr_storage * addr_to_use = NULL;
 
-		if (sccp_netsock_is_IPv4(&ha->netaddr)) {
+		if (sccp_netsock_is_IPv4(&current_ha->netaddr)) {
 			if (sccp_netsock_is_IPv6(addr)) {
 				if (sccp_netsock_is_mapped_IPv4(addr)) {
 					if (!sccp_netsock_ipv4_mapped(addr, &mapped_addr)) {
@@ -1534,7 +1545,10 @@ char *sccp_dec2binstr(char *buf, size_t size, int value)
 
 gcc_inline void sccp_copy_string(char *dst, const char *src, size_t size)
 {
-	pbx_assert(NULL != dst && NULL != src);
+	pbx_assert(NULL != dst);
+	if (!src) {								/* tolerate a NULL source (absent line/device fields) instead of crashing */
+		src = "";
+	}
 	if (do_expect(size != 0)) {
 		while (do_expect(--size != 0)) {
 			if (+(*dst++ = *src++) == '\0') {
@@ -1829,7 +1843,7 @@ static char **__sccp_bt_get_symbols(void **addresses, size_t num_frames)
 				if ((lastslash = strrchr(file, '/'))) {
 					const char * prevslash = NULL;
 
-					for (prevslash = lastslash - 1; *prevslash != '/' && prevslash >= file; prevslash--) {
+					for (prevslash = lastslash - 1; prevslash >= file && *prevslash != '/'; prevslash--) {
 					}
 					if (prevslash >= file) {
 						lastslash = prevslash;

@@ -155,6 +155,7 @@ static boolean_t __netsock_resolve_first_af(struct sockaddr_storage *addr, const
 	e = getaddrinfo(name, NULL, &hints, &res);
 	if(e == 0) {
 		memcpy(addr, res->ai_addr, res->ai_addrlen);
+		freeaddrinfo(res);
 		result = TRUE;
 	} else {
 		if (e == EAI_NONAME) {
@@ -163,7 +164,6 @@ static boolean_t __netsock_resolve_first_af(struct sockaddr_storage *addr, const
 			pbx_log(LOG_ERROR, "getaddrinfo(\"%s\") failed: %s\n", name, gai_strerror(e));
 		}
 	}
-	freeaddrinfo(res);
 	return result;
 }
 
