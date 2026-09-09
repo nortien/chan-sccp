@@ -578,10 +578,23 @@ static void sccp_hint_addSubscription4Device(const sccp_device_t * device, const
 	subscriber->positionOnDevice = positionOnDevice;
 
 	// Copy devicetype from buttonTemplate, for use in sccp_hint_notifySubscribers
+	//
+	// Filtered by button type, and stopped at the first match. Line instances and
+	// speeddial instances are separate numbering spaces that both start at 1, so a
+	// line button and a hinted speeddial routinely carry the same number. Matching on
+	// the number alone therefore also matched a line button, and with no break the
+	// last match won: on a phone with an expansion module that is an addon button,
+	// whose devicetype is the addon's rather than the handset's. The notifier reads
+	// this field to decide how to render the label, so the affected speeddial lost
+	// the party information and showed only its own name. Within hinted speeddials
+	// the instance is unique, so stopping at the first match is safe.
 	int i = 0;
-	for (i = 0; i < StationMaxButtonTemplateSize; i++) {
-		if (device->buttonTemplate[i].instance == instance) {
-			subscriber->devicetype = device->buttonTemplate[i].devicetype;
+	if(device->buttonTemplate) {
+		for (i = 0; i < StationMaxButtonTemplateSize; i++) {
+			if (device->buttonTemplate[i].instance == instance && device->buttonTemplate[i].type == SKINNY_BUTTONTYPE_BLFSPEEDDIAL) {
+				subscriber->devicetype = device->buttonTemplate[i].devicetype;
+				break;
+			}
 		}
 	}
 
@@ -784,8 +797,15 @@ static void sccp_hint_updateLineState(struct sccp_hint_lineState * lineState, sc
 			sccp_copy_string(lineState->callInfo.partyName, SKINNY_DISP_TEMP_FAIL, sizeof(lineState->callInfo.partyName));
 			sccp_log((DEBUGCAT_HINT)) (VERBOSE_PREFIX_4 "SCCP: (sccp_hint_updateLineState) 0 devices register on linename: %s\n", line->name);
 
-		} else if (SCCP_LIST_GETSIZE(&line->channels) > 1) {
-			/* line is currently shared between multiple device and has multiple concurrent calls active */
+		} else if (SCCP_LIST_GETSIZE(&line->channels) > 1 && SCCP_LIST_GETSIZE(&line->devices) > 1) {
+			/* line is currently shared between multiple device and has multiple concurrent calls active
+			 *
+			 * The device count is part of the test, matching what the comment above has
+			 * always claimed. Channel count alone was enough, and an attended transfer
+			 * always puts a second channel on the transferer's own line, so any transfer
+			 * on an unshared line took this path. The handler then reports the line as
+			 * in use remotely, which is how a watching speeddial came to read "In Use
+			 * Remote" instead of the party being consulted for the whole transfer. */
 			sccp_hint_updateLineStateForMultipleChannels(lineState, state);
 		} else {
 			/* just one device per line */
@@ -1207,10 +1227,21 @@ static void sccp_hint_notifySubscribers(sccp_hint_list_t * hint)
 				*/
 				REQ(msg, FeatureStatDynamicMessage);
 				if (!msg) {
-					return;
+					/* break, not return: this is inside the traverse of the subscriber
+					 * list, which is locked above and unlocked after it. Returning here
+					 * walked out with the lock still held, and every later notification
+					 * for this hint then blocked forever on a list nothing would unlock
+					 * again, silently and with nothing in the log. */
+					break;
 				}
 				sccp_copy_string(msg->data.FeatureStatDynamicMessage.textLabel, displayMessage, sizeof(msg->data.FeatureStatDynamicMessage.textLabel));
-				msg->data.FeatureStatDynamicMessage.textLabel[strlen(displayMessage) - 1] = '\0';
+				/* Guarded: on an empty label the subtraction wraps and the write lands
+				 * on the byte before the buffer, which is another field of the same
+				 * message. A speeddial configured with a hint but no label reaches here
+				 * with nothing to shorten. */
+				if (displayMessage[0]) {
+					msg->data.FeatureStatDynamicMessage.textLabel[strlen(displayMessage) - 1] = '\0';
+				}
 				msg->data.FeatureStatDynamicMessage.lel_lineInstance                      = htolel(subscriber->instance);
 				msg->data.FeatureStatDynamicMessage.lel_buttonType                        = htolel(SKINNY_BUTTONTYPE_BLFSPEEDDIAL);
 				msg->data.FeatureStatDynamicMessage.stateVal.lel_uint32                   = htolel(status);
@@ -1220,7 +1251,12 @@ static void sccp_hint_notifySubscribers(sccp_hint_list_t * hint)
 				 * Send the actual message we wanted to send */
 				REQ(msg, FeatureStatDynamicMessage);
 				if (!msg) {
-					return;
+					/* break, not return: this is inside the traverse of the subscriber
+					 * list, which is locked above and unlocked after it. Returning here
+					 * walked out with the lock still held, and every later notification
+					 * for this hint then blocked forever on a list nothing would unlock
+					 * again, silently and with nothing in the log. */
+					break;
 				}
 				sccp_copy_string(msg->data.FeatureStatDynamicMessage.textLabel, displayMessage, sizeof(msg->data.FeatureStatDynamicMessage.textLabel));
 				msg->data.FeatureStatDynamicMessage.lel_lineInstance    = htolel(subscriber->instance);
