@@ -575,7 +575,6 @@ static int sccp_manager_device_add_line(struct mansession *s, const struct messa
 	}
 	if (sccp_config_addButton(&d->buttonconfig, -1, LINE, line->name, NULL, NULL) == SCCP_CONFIG_CHANGE_CHANGED) {
 		d->pendingUpdate = 1;
-		sccp_config_addButton(&d->buttonconfig, -1, LINE, line->name, NULL, NULL);
 		sccp_device_check_update(d);
 		astman_append(s, "Done\r\n");
 		astman_append(s, "\r\n");
@@ -655,7 +654,7 @@ static int sccp_manager_line_fwd_update(struct mansession *s, const struct messa
 					cfwd_type = SCCP_CFWD_NOANSWER;
 				}
 				if(cfwd_type != SCCP_CFWD_NONE) {
-					ld->cfwd[cfwd_type].enabled = sccp_true(Disable);
+					ld->cfwd[cfwd_type].enabled = !sccp_true(Disable);		// this else-branch is the enable path (Disable is false here); enabled must be TRUE, not sccp_true(Disable) which is always FALSE
 					const char * destination = ld->cfwd[cfwd_type].enabled ? number : "";
 					sccp_copy_string(ld->cfwd[cfwd_type].number, destination, sizeof(ld->cfwd[cfwd_type].number));
 					sccp_feat_changed(ld->device, ld, sccp_cfwd2feature(cfwd_type));
@@ -748,6 +747,7 @@ static int sccp_manager_device_set_dnd(struct mansession *s, const struct messag
 				d->dndFeature.status = SCCP_DNDMODE_OFF;
 			} else {
 				astman_send_error(s, m, "DNDState Variable has to be one of (on/off/reject/silent).");
+				return 0;
 			}
 
 			if (d->dndFeature.status != prevStatus) {
