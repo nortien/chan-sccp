@@ -113,7 +113,12 @@ static inline skinny_codec_t sccp_astwrap_getSkinnyFormatSingle(struct ast_forma
 	}
 
 	if (codec == SKINNY_CODEC_NONE) {
-		ast_log(LOG_WARNING, "SCCP: (getSkinnyFormatSingle) No matching codec found");
+		/* Every caller uses this as a question - "is any of this something a skinny
+		 * phone can carry?" - and handles no for an answer, with a notice of its own
+		 * saying what it decided to do about it. A Local channel offers slin and gets
+		 * here on an entirely ordinary call, so warning about it filled the log with
+		 * alarm over a normal outcome and taught the operator to skim past warnings. */
+		sccp_log(DEBUGCAT_CODEC)(VERBOSE_PREFIX_3 "SCCP: (getSkinnyFormatSingle) none of the offered formats has a skinny equivalent\n");
 	}
 	return codec;
 }
@@ -141,7 +146,8 @@ static uint8_t sccp_astwrap_getSkinnyFormatMultiple(struct ast_format_cap *ast_f
 	}
 
 	if (codecs[0] == SKINNY_CODEC_NONE) {
-		ast_log(LOG_WARNING, "SCCP: (getSkinnyFormatSingle) No matching codecs found");
+		/* Same as above, and this one named the wrong function on top of it. */
+		sccp_log(DEBUGCAT_CODEC)(VERBOSE_PREFIX_3 "SCCP: (getSkinnyFormatMultiple) none of the offered formats has a skinny equivalent\n");
 	}
 
 	return position;

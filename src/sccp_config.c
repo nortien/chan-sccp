@@ -1142,14 +1142,23 @@ sccp_value_changed_t sccp_config_parse_privacyFeature(void * const dest, const s
 	char *                      value          = pbx_strdupa(v->value);
 	sccp_featureConfiguration_t privacyFeature = { 0 };
 
-	if (sccp_strcaseequals(value, "full")) {
+	if (sccp_strlen_zero(value)) {
+		/* This option has no default, and sccp_config_set_defaults hands a parser an
+		 * empty value to mean "clear it" when the file does not set it. Every device
+		 * without a privacy= line came through here and was told its value was
+		 * invalid - one warning per device on nearly every installation, for the
+		 * absence of an optional setting. Empty is off, which is also what the
+		 * warning path left behind, so nothing changes but the noise. */
+		privacyFeature.status  = 0;
+		privacyFeature.enabled = FALSE;
+	} else if (sccp_strcaseequals(value, "full")) {
 		privacyFeature.status  = ~0;
 		privacyFeature.enabled = TRUE;
 	} else if (sccp_true(value) || sccp_false(value)) {
 		privacyFeature.status  = 0;
 		privacyFeature.enabled = sccp_true(value);
 	} else {
-		pbx_log(LOG_WARNING, "Invalid privacy value, should be 'full', 'on' or 'off'\n");
+		pbx_log(LOG_WARNING, "Invalid privacy value '%s', should be 'full', 'on' or 'off'\n", value);
 		return SCCP_CONFIG_CHANGE_INVALIDVALUE;
 	}
 

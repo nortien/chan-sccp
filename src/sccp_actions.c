@@ -59,6 +59,7 @@ void handle_token_request(constSessionPtr s, devicePtr d, constMessagePtr msg_in
 void handle_register(constSessionPtr s, devicePtr maybe_d, constMessagePtr msg_in)			__NONNULL(1,3);
 void handle_SPCPTokenReq(constSessionPtr s, devicePtr d, constMessagePtr msg_in)			__NONNULL(1,3);
 void handle_accessorystatus_message(constSessionPtr s, devicePtr d, constMessagePtr msg_in)		__NONNULL(1,2,3);
+void handle_mediapathcapability(constSessionPtr s, devicePtr d, constMessagePtr msg_in)			__NONNULL(1,2,3);
 void handle_unregister(constSessionPtr s, devicePtr d, constMessagePtr msg_in)				__NONNULL(1,3);
 void handle_line_number(constSessionPtr s, devicePtr d, constMessagePtr msg_in)				__NONNULL(1,2,3);
 void handle_speed_dial_stat_req(constSessionPtr s, devicePtr d, constMessagePtr msg_in)			__NONNULL(1,2,3);
@@ -188,7 +189,7 @@ static const struct messageMap_cb sccpMessagesCbMap[SCCP_MESSAGE_HIGH_BOUNDARY +
 	[UpdateCapabilitiesMessage] = {handle_updatecapabilities_message, TRUE},
 	[UpdateCapabilitiesV2Message] = {handle_updatecapabilities_V2_message, TRUE},
 	[UpdateCapabilitiesV3Message] = {handle_updatecapabilities_V3_message, TRUE},
-	[MediaPathCapabilityMessage] = {handle_unknown_message, TRUE},
+	[MediaPathCapabilityMessage] = {handle_mediapathcapability, TRUE},
 	[DisplayDynamicNotifyMessage] = {handle_unknown_message, TRUE},
 	[DisplayDynamicPriNotifyMessage] = {handle_unknown_message, TRUE},
 	[ExtensionDeviceCaps] = {handle_extension_devicecaps, TRUE},
@@ -333,40 +334,55 @@ void handle_unknown_message(constSessionPtr no_s, devicePtr no_d, constMessagePt
 }
 
 
-/*
- * Interesting values for Last =
- * 0 Phone Load Is Rejected
- * 1 Phone Load TFTP Size Error
- * 2 Phone Load Compressor Error
- * 3 Phone Load Version Error
- * 4 Disk Full Error
- * 5 Checksum Error
- * 6 Phone Load Not Found in TFTP Server
- * 7 TFTP Timeout
- * 8 TFTP Access Error
- * 9 TFTP Error
- * 10 CCM TCP Connection timeout
- * 11 CCM TCP Connection Close because of bad Ack
- * 12 CCM Resets TCP Connection
- * 13 CCM Aborts TCP Connection
- * 14 CCM TCP Connection Closed
- * 15 CCM TCP Connection Closed because ICMP Unreachable
- * 16 CCM Rejects TCP Connection
- * 17 Keepalive Time Out
- * 18 Fail Back to Primary CCM
- * 20 User Resets Phone By Keypad
- * 21 Phone Resets because IP configuration
- * 22 CCM Resets Phone
- * 23 CCM Restarts Phone
- * 24 CCM Rejects Phone Registration
- * 25 Phone Initializes
- * 26 CCM TCP Connection Closed With Unknown Reason
- * 27 Waiting For State From CCM
- * 28 Waiting For Response From CCM
- * 29 DSP Alarm
- * 30 Phone Abort CCM TCP Connection
- * 31 File Authorization Failed
+/*!
+ * \brief The phone's own account of why it was last out of service
+ * \param reason The ReasonForOutOfService enum from an XML alarm
+ * \return Static string, "Unknown" for a value the table has no entry for
+ * \note This table lived here as a comment beside the handler while the handler
+ *       printed the bare number, and only with core debugging on. The number is
+ *       worthless to an operator; the text says whether the phone lost its keepalive,
+ *       failed a TFTP fetch, or was told to reset. 19 is not assigned.
  */
+static const char * sccp_outofservicereason2str(int reason)
+{
+	static const char * const reasons[] = {
+		[0] = "Phone Load Is Rejected",
+		[1] = "Phone Load TFTP Size Error",
+		[2] = "Phone Load Compressor Error",
+		[3] = "Phone Load Version Error",
+		[4] = "Disk Full Error",
+		[5] = "Checksum Error",
+		[6] = "Phone Load Not Found in TFTP Server",
+		[7] = "TFTP Timeout",
+		[8] = "TFTP Access Error",
+		[9] = "TFTP Error",
+		[10] = "CCM TCP Connection timeout",
+		[11] = "CCM TCP Connection Close because of bad Ack",
+		[12] = "CCM Resets TCP Connection",
+		[13] = "CCM Aborts TCP Connection",
+		[14] = "CCM TCP Connection Closed",
+		[15] = "CCM TCP Connection Closed because ICMP Unreachable",
+		[16] = "CCM Rejects TCP Connection",
+		[17] = "Keepalive Time Out",
+		[18] = "Fail Back to Primary CCM",
+		[20] = "User Resets Phone By Keypad",
+		[21] = "Phone Resets because IP configuration",
+		[22] = "CCM Resets Phone",
+		[23] = "CCM Restarts Phone",
+		[24] = "CCM Rejects Phone Registration",
+		[25] = "Phone Initializes",
+		[26] = "CCM TCP Connection Closed With Unknown Reason",
+		[27] = "Waiting For State From CCM",
+		[28] = "Waiting For Response From CCM",
+		[29] = "DSP Alarm",
+		[30] = "Phone Abort CCM TCP Connection",
+		[31] = "File Authorization Failed",
+	};
+	if(reason < 0 || reason >= (int)ARRAY_LEN(reasons) || !reasons[reason]) {
+		return "Unknown";
+	}
+	return reasons[reason];
+}
 
 /*!
  * \brief Handle Alarm
@@ -395,10 +411,11 @@ void handle_alarm(constSessionPtr s, devicePtr no_d, constMessagePtr msg_in)
 void handle_XMLAlarmMessage(constSessionPtr s, devicePtr no_d, constMessagePtr msg_in)
 {
 	sccp_mid_t mid = letohl(msg_in->header.lel_messageId);
-	char alarmName[101];
-	int reasonEnum = 0;
-	char lastProtocolEventSent[101];
-	char lastProtocolEventReceived[101];
+	char alarmName[101] = "";
+	char deviceName[StationMaxDeviceNameSize] = "";								/* the alarm arrives before the session is bound to a device, so this is the only name we have */
+	int reasonEnum = -1;											/* 0 is a real reason, so "not present" has to be something else */
+	char lastProtocolEventSent[101] = "";
+	char lastProtocolEventReceived[101] = "";
 
 	/*
 	   char *deviceName = "";
@@ -423,6 +440,7 @@ void handle_XMLAlarmMessage(constSessionPtr s, devicePtr no_d, constMessagePtr m
 		if (sscanf(line, "<Alarm Name=\"%100[a-zA-Z]\">", alarmName) == 1) {
 			sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_2 "Alarm Type: %s\n", alarmName);
 		}
+		sscanf(line, "<String name=\"DeviceName\">%15[^<]</String>", deviceName);				/* 15 = StationMaxDeviceNameSize - 1 */
 		if (sscanf(line, "<Enum name=\"ReasonForOutOfService\">%d</Enum>>", &reasonEnum) == 1) {
 			sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_2 "Reason Enum: %d\n", reasonEnum);
 		}
@@ -450,8 +468,18 @@ void handle_XMLAlarmMessage(constSessionPtr s, devicePtr no_d, constMessagePtr m
 		   }
 		 */
 	}
+	/* The phone is telling us why it was last out of service: a keepalive it never got
+	 * answered, a TFTP fetch that failed, a reset it was sent. That is the one part of
+	 * this message an operator can act on, and it used to be visible only with core
+	 * debugging on and only as a bare number - while the raw dump below went out at
+	 * warning level whenever message debugging was on, so a debugging session showed
+	 * a warning for a message that was parsed and understood. One line, decoded, at
+	 * notice; the dump stays a debug matter. */
+	if (reasonEnum >= 0 || !sccp_strlen_zero(alarmName)) {
+		pbx_log(LOG_NOTICE, "%s: phone reports %s: reason %d (%s), last sent '%s', last received '%s'\n", sccp_strlen_zero(deviceName) ? sccp_session_getDesignator(s) : deviceName, sccp_strlen_zero(alarmName) ? "alarm" : alarmName, reasonEnum, sccp_outofservicereason2str(reasonEnum), lastProtocolEventSent, lastProtocolEventReceived);
+	}
 	if ((GLOB(debug) & DEBUGCAT_MESSAGE) != 0) {								// only show when debugging messages
-		pbx_log(LOG_WARNING, "SCCP XMLAlarm Message: %s(0x%04X) %d bytes length\n", msginfo2str(mid), mid, msg_in->header.length);
+		sccp_log((DEBUGCAT_MESSAGE)) (VERBOSE_PREFIX_3 "SCCP XMLAlarm Message: %s(0x%04X) %d bytes length\n", msginfo2str(mid), mid, msg_in->header.length);
 		sccp_dump_msg(msg_in);
 	}
 }
@@ -2651,6 +2679,25 @@ void handle_headset(constSessionPtr s, devicePtr d, constMessagePtr msg_in)
 	 */
 	sccp_accessorystate_t headsetmode = letohl(msg_in->data.HeadsetStatusMessage.lel_hsMode);
 	sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "%s: Accessory '%s' is '%s' (%u)\n", sccp_session_getDesignator(s), sccp_accessory2str(SCCP_ACCESSORY_HEADSET), sccp_accessorystate2str(headsetmode), 0);
+}
+
+/*!
+ * \brief Handle MediaPath Capability Message
+ * \param s SCCP Session
+ * \param d SCCP Device
+ * \param msg_in SCCP Message
+ * \note The phone announces, for one media path (handset, headset or speaker), what it
+ *       can do with it. A 7962 sends one of these while registering; IP Communicator
+ *       does too. Nothing in the driver acts on it yet. It was routed to the unknown
+ *       message handler, which reported a message the protocol table has a name and a
+ *       layout for as unhandled. Record what the phone said and move on.
+ */
+void handle_mediapathcapability(constSessionPtr s, devicePtr d, constMessagePtr msg_in)
+{
+	uint32_t mediaPathID = letohl(msg_in->data.MediaPathCapabilityMessage.lel_MediaPathID);
+	uint32_t capabilities = letohl(msg_in->data.MediaPathCapabilityMessage.lel_MediaPathCapabilities);
+	const char * pathName = (mediaPathID >= SCCP_ACCESSORY_HEADSET && mediaPathID <= SCCP_ACCESSORY_SPEAKER) ? sccp_accessory2str((sccp_accessory_t)mediaPathID) : "Unknown";
+	sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: Media path '%s' (%u) capabilities: %u\n", d->id, pathName, mediaPathID, capabilities);
 }
 
 /*!

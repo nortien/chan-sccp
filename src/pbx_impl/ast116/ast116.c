@@ -121,7 +121,12 @@ static inline skinny_codec_t sccp_astwrap_getSkinnyFormatSingle(struct ast_forma
 	}
 
 	if (codec == SKINNY_CODEC_NONE) {
-		ast_log(LOG_WARNING, "SCCP: (getSkinnyFormatSingle) No matching codec found");
+		/* Every caller uses this as a question - "is any of this something a skinny
+		 * phone can carry?" - and handles no for an answer, with a notice of its own
+		 * saying what it decided to do about it. A Local channel offers slin and gets
+		 * here on an entirely ordinary call, so warning about it filled the log with
+		 * alarm over a normal outcome and taught the operator to skim past warnings. */
+		sccp_log(DEBUGCAT_CODEC)(VERBOSE_PREFIX_3 "SCCP: (getSkinnyFormatSingle) none of the offered formats has a skinny equivalent\n");
 	}
 	return codec;
 }
@@ -149,7 +154,8 @@ static uint8_t sccp_astwrap_getSkinnyFormatMultiple(struct ast_format_cap *ast_f
 	}
 
 	if (codecs[0] == SKINNY_CODEC_NONE) {
-		ast_log(LOG_WARNING, "SCCP: (getSkinnyFormatSingle) No matching codecs found");
+		/* Same as above, and this one named the wrong function on top of it. */
+		sccp_log(DEBUGCAT_CODEC)(VERBOSE_PREFIX_3 "SCCP: (getSkinnyFormatMultiple) none of the offered formats has a skinny equivalent\n");
 	}
 
 	return position;
@@ -2555,7 +2561,11 @@ static boolean_t sccp_astwrap_createRtpInstance(constDevicePtr d, constChannelPt
 		 * the first time it tries to write outbound audio. Seeding the table
 		 * with the well-known payloads keeps inbound calls audible. */
 		{
-			static const struct { int payload; const char *mime; } sccp_audio_static_payloads[] = {
+			/* mime is a plain char* because that is what asterisk's prototype takes,
+			 * and the call right above this one passes a bare string literal to the
+			 * same parameter. The table itself is const; asterisk does not write
+			 * through the pointer. */
+			static const struct { int payload; char *mime; } sccp_audio_static_payloads[] = {
 				{ 0,  "PCMU" },  // ulaw
 				{ 3,  "GSM"  },
 				{ 4,  "G723" },
