@@ -3095,8 +3095,18 @@ static void sccp_device_indicate_onhook_remote(constDevicePtr device, const uint
 
 static void sccp_device_indicate_offhook_remote(constDevicePtr device, const uint8_t lineInstance, const uint32_t callid)
 {
-	sccp_device_sendcallstate(device, lineInstance, callid, SKINNY_CALLSTATE_OFFHOOK, SKINNY_CALLPRIORITY_LOW, SKINNY_CALLINFO_VISIBILITY_DEFAULT);
-	sccp_dev_set_keyset(device, lineInstance, callid, KEYMODE_OFFHOOK);
+	/* This device is watching someone else seize a line it shares, not picking up a
+	 * call of its own, so it gets the keyset for a line held elsewhere and the lamp
+	 * that goes with it, exactly as it does once that call is answered.
+	 *
+	 * It used to be handed the offhook keyset instead. That was never noticed because
+	 * nothing called this function: it was written, registered in both device tables
+	 * and left unreachable. Wiring it up put an End Call key on a phone for a call it
+	 * has no part in, which was visible on the bench the moment the indication started
+	 * arriving. The lamp was missing too, so the button showed nothing. */
+	sccp_device_setLamp(device, SKINNY_STIMULUS_LINE, lineInstance, SKINNY_LAMP_ON);
+	sccp_device_sendcallstate(device, lineInstance, callid, SKINNY_CALLSTATE_CALLREMOTEMULTILINE, SKINNY_CALLPRIORITY_LOW, SKINNY_CALLINFO_VISIBILITY_DEFAULT);
+	sccp_dev_set_keyset(device, lineInstance, callid, KEYMODE_ONHOOKSTEALABLE);
 }
 
 

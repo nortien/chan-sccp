@@ -527,6 +527,22 @@ static void __sccp_indicate_remote_device(constDevicePtr device, channelPtr c, l
 					remoteDevice->indicate->remoteOnhook(remoteDevice, lineInstance, callid);
 					break;
 
+				case SCCP_CHANNELSTATE_OFFHOOK:
+					/* Seizing a shared line is worth telling the other appearances
+					 * about. Until now this state fell through to the default below and
+					 * nothing was sent, so a second phone sharing the line learned of a
+					 * call only once it was answered: through seizure, dialling and
+					 * ringing its button showed the line as free, and someone could
+					 * take it at the same moment.
+					 *
+					 * The indication itself was already written and registered in both
+					 * device tables under remoteOffhook; it simply had no caller. */
+					sccp_log(DEBUGCAT_INDICATE)(VERBOSE_PREFIX_3 "%s -> %s: indicate remote offhook (lineInstance: %d, callid: %d)\n", DEV_ID_LOG(device), DEV_ID_LOG(remoteDevice), lineInstance, c->callid);
+					if(remoteDevice->indicate->remoteOffhook) {
+						remoteDevice->indicate->remoteOffhook(remoteDevice, lineInstance, callid);
+					}
+					break;
+
 				case SCCP_CHANNELSTATE_CONNECTEDCONFERENCE:
 				case SCCP_CHANNELSTATE_CONNECTED:
 					sccp_log(DEBUGCAT_INDICATE) (VERBOSE_PREFIX_3 "%s -> %s: indicate remote connected (lineInstance: %d, callid: %d %s)\n", DEV_ID_LOG(device), DEV_ID_LOG(remoteDevice), lineInstance, c->callid, c->answered_elsewhere ? ", answered elsewhere" : "");
