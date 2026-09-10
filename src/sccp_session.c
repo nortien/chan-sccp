@@ -383,10 +383,12 @@ static gcc_inline int session_buffer2msg(sccp_session_t * s, const unsigned char
 	// dissect the message header
 	int lenAccordingToOurProtocolSpec = session_dissect_header(s, &msg_header, &msginfo);
 	if (dont_expect(lenAccordingToOurProtocolSpec < 0)) {
-		if (lenAccordingToOurProtocolSpec == -2) {
-			return 0;
-		}
-		lenAccordingToOurProtocolSpec = 0;									// unknown message, read it and discard content completely
+		/* The header was rejected - unknown message id, unknown protocol version, or
+		 * an impossible size - and session_dissect_header has already said so in the
+		 * log. Discard it here. This used to zero the length and go on to dispatch the
+		 * zeroed message, and a zeroed header is messageId 0, which is KeepAlive: the
+		 * log said "discarding", and the phone got a KeepAliveAck for its trouble. */
+		return 0;
 	}
 	if (dont_expect(lenAccordingToPacketHeader > lenAccordingToOurProtocolSpec)) {					// show out discarded bytes
 		pbx_log(LOG_WARNING, "%s: (session_dissect_msg) Incoming message is bigger(%d) than known size(%d). Packet looks like!\n", DEV_ID_LOG(s->device), lenAccordingToPacketHeader, lenAccordingToOurProtocolSpec);
@@ -526,7 +528,7 @@ static boolean_t sccp_session_removeFromGlobals(sccp_session_t * s)
  *      - socket_lock
  *      - Glob(sessions)
  */
-void sccp_session_terminateAll()
+void sccp_session_terminateAll(void)
 {
 	sccp_session_t *s = NULL;
 
@@ -846,9 +848,16 @@ void *sccp_session_device_thread(void *session)
 				recalc_wait_time(s);
 				oncall = hasActiveChannel;
 			}
-			if (d->status.token == SCCP_TOKEN_STATE_ACK) {
-				tokenThread = TRUE;								// only does TCP-Keepalive
-			}
+			/* Exempt the session from the keepalive timeout only while it is actually in
+			 * the token-ack state, waiting for the phone to come back and register. This
+			 * used to latch TRUE the first time it saw the ack and never clear, so every
+			 * phone that registered through a token handshake - which is every current
+			 * model - kept a session that could never time out: unplug it and its thread
+			 * sat there for good. The token state goes back to NOTOKEN on registration,
+			 * so recomputing it each round is all that is needed. (The comment here used
+			 * to say the socket's TCP keepalive would cover it; that option is never
+			 * turned on.) */
+			tokenThread = (d->status.token == SCCP_TOKEN_STATE_ACK);
 		}
 		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 		sccp_log_and((DEBUGCAT_SOCKET + DEBUGCAT_HIGH))(VERBOSE_PREFIX_4 "%s: set poll timeout %d for session %d\n", DEV_ID_LOG(s->device), (int)s->keepAliveInterval, fds[0].fd);
@@ -880,7 +889,11 @@ void *sccp_session_device_thread(void *session)
 						socket_get_error(s, __FILE__, __LINE__, __PRETTY_FUNCTION__);
 						break;
 					}
-				} else if (!((recv_len += result) && ((ARRAY_LEN(recv_buffer) * sizeof(unsigned char)) - recv_len) && process_buffer(s, &msg, recv_buffer, &recv_len) == 0)) {
+				/* Hand whatever arrived to process_buffer and judge by what it says. There
+				 * used to be a "buffer has room left" test in between, evaluated before
+				 * the buffer had been drained, so a read that filled it exactly was
+				 * treated as an unparseable packet and the phone was reset for it. */
+				} else if (!((recv_len += result) && process_buffer(s, &msg, recv_buffer, &recv_len) == 0)) {
 					pbx_log(LOG_ERROR, "%s: (netsock_device_thread) Received a packet or message (with result:%d) which we could not handle, giving up session: %p!\n", s->designator, result, s);
 					sccp_dump_msg(&msg);
 					if (s->device) {
@@ -1062,8 +1075,14 @@ static boolean_t sccp_session_set_ourip(sccp_session_t * s)
 	} else {
 		memcpy(&s->ourip, &GLOB(bindaddr), sizeof(s->ourip));
 	}
-	sccp_copy_string(s->designator, sccp_netsock_stringify(&s->ourip), sizeof(s->designator));
-	sccp_log((DEBUGCAT_SOCKET))(VERBOSE_PREFIX_3 "SCCP: Connected on server via %s\n", s->designator);
+	/* The designator prefixes every log line about this session until a device is bound
+	 * to it, which is precisely the stretch where a phone that fails to register has to
+	 * be told apart from the others. It used to be our own listening address, so every
+	 * pre-registration line read "10.10.10.56:2000" whichever phone it was about, and
+	 * the "(ip-address: ...)" in the disconnect messages named the server. Name the
+	 * peer. */
+	sccp_copy_string(s->designator, sccp_netsock_stringify(&s->sin), sizeof(s->designator));
+	sccp_log((DEBUGCAT_SOCKET))(VERBOSE_PREFIX_3 "SCCP: Connection from %s on server address %s\n", s->designator, sccp_netsock_stringify(&s->ourip));
 	return TRUE;
 }
 

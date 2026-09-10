@@ -84,8 +84,10 @@
 				if(__res == _b) {                                                                                       \
 					*_a = _c;                                                                                       \
 				};                                                                                                      \
+				/* only the branch that took the lock gives it back; this used to unlock \
+				 * unconditionally, releasing a mutex the failed trylock never held */   \
+				pbx_mutex_unlock(_d);                                                                                   \
 			};                                                                                                              \
-			pbx_mutex_unlock(_d);                                                                                           \
 			__res;                                                                                                          \
 		})
 #	define CAS_PTR(_a, _b, _c, _d)                                                                                                  \

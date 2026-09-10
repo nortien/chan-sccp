@@ -346,11 +346,23 @@ boolean_t sccp_threadpool_destroy(sccp_threadpool_t * tp_p)
 
 		/* Make sure threads have finished (should never have to execute) */
 		if (SCCP_LIST_GETSIZE(&tp_p->threads) != 0) {
-			while ((tp_thread = SCCP_LIST_REMOVE_HEAD(&(tp_p->threads), list))) {
+			/* The workers are created detached, so they cannot be joined - that is
+			 * undefined behaviour, and it is what stood here. Each one removes and
+			 * frees its own entry from its cancellation cleanup and signals exit, so
+			 * cancel them, leave the list to them, and wait a bounded time for it to
+			 * drain. */
+			SCCP_LIST_TRAVERSE(&(tp_p->threads), tp_thread, list) {
 				pbx_log(LOG_ERROR, "Forcing Destroy of thread %p\n", tp_thread);
 				pthread_cancel(tp_thread->thread);
 				pthread_kill(tp_thread->thread, SIGURG);
-				pthread_join(tp_thread->thread, NULL);
+			}
+			gettimeofday(&tp, NULL);
+			ts.tv_sec = tp.tv_sec + 2;
+			ts.tv_nsec = tp.tv_usec * 1000;
+			while (SCCP_LIST_GETSIZE(&tp_p->threads) != 0 && pbx_cond_timedwait(&tp_p->exit, &(tp_p->threads.lock), &ts) == 0) {
+			}
+			if (SCCP_LIST_GETSIZE(&tp_p->threads) != 0) {
+				pbx_log(LOG_ERROR, "SCCP: %d thread pool worker(s) did not finish; leaving them and their entries behind rather than freeing under them\n", SCCP_LIST_GETSIZE(&tp_p->threads));
 			}
 		}
 		SCCP_LIST_UNLOCK(&(tp_p->threads));

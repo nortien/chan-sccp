@@ -333,7 +333,15 @@ void sccp_refcount_destroy(void)
 	// cleanup if necessary, if everything is well, this should not be necessary
 	ast_rwlock_wrlock(&objectslock);
 	for (type = 0; type < ARRAY_LEN(obj_info); type++) { 							// unwind in order of type priority
-		for (hash = 0; hash < SCCP_HASH_PRIME && objects[hash]; hash++) {
+		/* Buckets are created on demand, so the table is sparse. The loop condition used
+		 * to include objects[hash], which ends the walk at the first empty bucket rather
+		 * than skipping it - in practice at bucket 0 or thereabouts - so this sweep and
+		 * the "forcefully removed" warning below never ran, and the driver's own check
+		 * that every reference was released at shutdown was silently switched off. */
+		for (hash = 0; hash < SCCP_HASH_PRIME; hash++) {
+			if (!objects[hash]) {
+				continue;
+			}
 			SCCP_RWLIST_WRLOCK(&(objects[hash]->refCountedObjects));
 			SCCP_RWLIST_TRAVERSE_SAFE_BEGIN(&(objects[hash]->refCountedObjects), obj, list) {
 				if (obj->type == type) {
