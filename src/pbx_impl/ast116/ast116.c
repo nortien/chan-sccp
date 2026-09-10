@@ -1788,13 +1788,26 @@ static PBX_CHANNEL_TYPE *sccp_astwrap_request(const char *type, struct ast_forma
 	sccp_parse_auto_answer((PBX_CHANNEL_TYPE *)requestor, &autoanswer_type);
 
 	/** get requested format */
-	if ( (audio_codec = pbx_codec2skinny_codec(ast_format_compatibility_format2bitfield(ast_format_cap_get_best_by_type(cap, AST_MEDIA_TYPE_AUDIO)))) == SKINNY_CODEC_NONE) {
+	/* ast_format_cap_get_best_by_type hands back a reference, and it can hand back
+	 * NULL. Passing it straight into format2bitfield leaked the reference on every
+	 * incoming call and would dereference NULL for a capability set with no audio. */
+	{
+		struct ast_format * best = ast_format_cap_get_best_by_type(cap, AST_MEDIA_TYPE_AUDIO);
+		audio_codec = best ? pbx_codec2skinny_codec(ast_format_compatibility_format2bitfield(best)) : SKINNY_CODEC_NONE;
+		ao2_cleanup(best);
+	}
+	if (audio_codec == SKINNY_CODEC_NONE) {
 		pbx_log(LOG_NOTICE, "Could not match audio codec, Falling back to ULAW\n");
 		audio_codec = SKINNY_CODEC_G722_64K;
 	}
 	sccp_log(DEBUGCAT_CODEC) (VERBOSE_PREFIX_4 "SCCP: requested Audio Codec in Skinny Format: %s\n", codec2str(audio_codec));
 #ifdef CS_SCCP_VIDEO
-	if ( (video_codec = pbx_codec2skinny_codec(ast_format_compatibility_format2bitfield(ast_format_cap_get_best_by_type(cap, AST_MEDIA_TYPE_VIDEO)))) == SKINNY_CODEC_NONE) {
+	{
+		struct ast_format * best = ast_format_cap_get_best_by_type(cap, AST_MEDIA_TYPE_VIDEO);
+		video_codec = best ? pbx_codec2skinny_codec(ast_format_compatibility_format2bitfield(best)) : SKINNY_CODEC_NONE;
+		ao2_cleanup(best);
+	}
+	if (video_codec == SKINNY_CODEC_NONE) {
 		pbx_log(LOG_NOTICE, "Could not match video codec. No Video\n");
 		video_codec = SKINNY_CODEC_NONE;
 	}

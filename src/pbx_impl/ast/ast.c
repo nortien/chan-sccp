@@ -643,6 +643,10 @@ static boolean_t sccp_astgenwrap_handleHangup(constChannelPtr channel, const cha
 			if(pbx_check_hangup(pbx_channel)) {
 				// already being hungup
 				sccp_log(DEBUGCAT_PBX)("%s: (%s): Already being hungup, giving up\n", c->designator, hanguptype);
+				/* The one exit from this block that left the channel locked. Both ends
+				 * hanging up at once is the ordinary way to get here, and it left the
+				 * ast_channel mutex held for good. */
+				pbx_channel_unlock(pbx_channel);
 				res = FALSE;
 				break;
 			}
