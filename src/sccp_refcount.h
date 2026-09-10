@@ -87,6 +87,11 @@ typedef struct {
 
 __END_C_EXTERN__
 
+/* review 2026-09: WITHREF/GETWITHREF - an automatic retain/release scope that was abandoned, then
+ * superseded by AUTO_RELEASE (__attribute__((cleanup)), used throughout). It never compiled: it
+ * passes _dst by value to sccp_refcount_release, whose prototype takes const void ** const; debug
+ * pbx_log lines on every entry/exit remain inside. The nested '#if 0' further down is a usage
+ * example, dead twice. */
 #if 0 /* UNUSED */
 /* *INDENT-OFF* */
 /* Automatically Retain/Release */

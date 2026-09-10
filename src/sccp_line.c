@@ -311,7 +311,7 @@ int __sccp_line_destroy(const void *ptr)
 	{
 		SCCP_LIST_LOCK(&l->mailboxes);
 		while ((mailbox = SCCP_LIST_REMOVE_HEAD(&l->mailboxes, list))) {
-			//sccp_mwi_unsubscribeMailbox(mailbox);
+			//sccp_mwi_unsubscribeMailbox(mailbox);	/* review 2026-09: no such function exists any more; unsubscription happens through the SCCP_EVENT_LINEINSTANCE_DESTROYED event that sccp_line_clean fires synchronously (sccp_mwi removeSubscription). No leak here, despite what the comment suggests */
 			sccp_free(mailbox);
 		}
 		SCCP_LIST_UNLOCK(&l->mailboxes);
@@ -546,7 +546,7 @@ void sccp_line_addChannel(constLinePtr line, constChannelPtr channel)
 	AUTO_RELEASE(sccp_line_t, l , sccp_line_retain(line));
 
 	if (l) {
-		//l->statistic.numberOfActiveChannels++;
+		//l->statistic.numberOfActiveChannels++;	/* review 2026-09: keep it off - the counter is maintained in __sccp_device_setActiveChannel; there is no matching decrement in sccp_line_removeChannel, so this would double-count (visible in 'sccp show line' and in callInstance) */
 		SCCP_LIST_LOCK(&l->channels);
 		if ((c = sccp_channel_retain(channel))) {							// Add into list retained
 #if CS_REFCOUNT_DEBUG

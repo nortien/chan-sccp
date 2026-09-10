@@ -1530,18 +1530,11 @@ static void * parking_subscriptionCleanup (void * data)
 
 /*!
  * \brief Parking Thread Arguments Structure
+ *
+ * review 2026-09: orphaned doxygen block - the structure it described went away when parking
+ * moved to ast_bridge_channel_write_park, the heading stayed. Kept as the trace of that change.
  */
 
-/*!
- * \brief Park the bridge channel of hostChannel
- * This function prepares the host and the bridged channel to be ready for parking.
- * It clones the pbx channel of both sides forward them to the park_thread
- *
- * \param hostChannel initial channel that request the parking
- * \todo we have a codec issue after unpark a call
- * \todo copy connected line info
- *
- */
 /*!
  * \brief Can this pbx park a call at the moment?
  *
@@ -1554,6 +1547,18 @@ static boolean_t sccp_astwrap_parkingAvailable(void)
 	return ast_parking_provider_registered() ? TRUE : FALSE;
 }
 
+/*!
+ * \brief Park the bridge channel of hostChannel
+ * This function prepares the host and the bridged channel to be ready for parking.
+ * It clones the pbx channel of both sides forward them to the park_thread
+ *
+ * \param hostChannel initial channel that request the parking
+ * \todo we have a codec issue after unpark a call
+ * \todo copy connected line info
+ *
+ * (review 2026-09: this block used to sit above parkingAvailable, where doxygen attached it
+ * to the wrong function; moved to the function it describes, text unchanged.)
+ */
 static sccp_parkresult_t sccp_astwrap_park(constChannelPtr hostChannel)
 {
 	sccp_parkresult_t res = PARK_RESULT_FAIL;
@@ -2069,6 +2074,11 @@ static int sccp_astwrap_fixup(PBX_CHANNEL_TYPE * oldchan, PBX_CHANNEL_TYPE * new
 	return res;
 }
 
+/* review 2026-09: switched off on purpose and not revivable as-is. The author's note inside says why
+ * (directrtp not back on track); sccp_tech.bridge uses Asterisk's ast_rtp_instance_bridge instead
+ * (the alternative line in the tech table is commented out), and iPbx.rtp_bridgePeers, the only
+ * member this could serve, is assigned nowhere. The block has also rotted: the 'if ((d0 && d1) &&
+ * ((d0->directrtp && d1->directrtp))' further down is missing a closing parenthesis. */
 #if 0
 #ifdef CS_AST_RTP_INSTANCE_BRIDGE
 static enum ast_bridge_result sccp_astwrap_rtpBridge(PBX_CHANNEL_TYPE * c0, PBX_CHANNEL_TYPE * c1, int flags, PBX_FRAME_TYPE ** fo, PBX_CHANNEL_TYPE ** rc, int timeoutms)
@@ -3038,6 +3048,11 @@ static int sccp_wrapper_recvdigit_end(PBX_CHANNEL_TYPE * ast, char digit, unsign
 	return -1;
 }
 
+/* review 2026-09: a stub - the body is commented out and NULL is returned unconditionally; the
+ * member it is wired to (iPbx.findChannelByCallback) has no caller either. Switched off over a bug
+ * that is still in the commented loop: the found remotePeer is unref'd and then returned to the
+ * caller, and the iterator's flags are poked through a cast to ao2_iterator. Do not just uncomment.
+ * Identical in ast113/114/115. */
 static PBX_CHANNEL_TYPE *sccp_astwrap_findChannelWithCallback(int (*const found_cb) (PBX_CHANNEL_TYPE * c, void *data), void *data, boolean_t lock)
 {
 	PBX_CHANNEL_TYPE *remotePeer = NULL;
@@ -3061,6 +3076,10 @@ static PBX_CHANNEL_TYPE *sccp_astwrap_findChannelWithCallback(int (*const found_
 }
 
 /*! \brief Set an option on a asterisk channel */
+/* review 2026-09, unfinished: never enabled - the sccp_tech row for it is commented out in the C
+ * table and explicitly NULL in the C++ one. The author's open question inside ("Correct ?") and the
+ * DIGIT_DETECT / SECURE_* cases that only set res=-1 show the work stopped halfway. Identical in
+ * ast113/114/115. */
 #if 0
 static int sccp_astwrap_setOption(PBX_CHANNEL_TYPE * ast, int option, void *data, int datalen)
 {
@@ -3102,6 +3121,11 @@ static int sccp_astwrap_setOption(PBX_CHANNEL_TYPE * ast, int option, void *data
 }
 #endif
 
+/* review 2026-09, hollowed out on purpose: the three lines that changed the linkedid are commented
+ * because swapping a linkedid on Asterisk 12+ corrupts CEL. What remains is a compare-and-return, so
+ * both members this feeds (setPBXChannelLinkedId, and setChannelLinkedId through the wrapper below)
+ * are silent no-ops. Their only callers are in sccp_conference.c, i.e. under CS_SCCP_CONFERENCE:
+ * dead in a default build, a no-op instead of the advertised behaviour with conferencing on. */
 static void sccp_astwrap_set_pbxchannel_linkedid(PBX_CHANNEL_TYPE * pbx_channel, const char *new_linkedid)
 {
 	if (pbx_channel) {
@@ -3917,7 +3941,7 @@ static void unregister_channel_tech(struct ast_channel_tech *tech)
 		ao2_ref(tech->capabilities, -1);
 	}
 	tech->capabilities = NULL;
-	tech = NULL;
+	tech = NULL;	/* review 2026-09: dead store - tech is a by-value parameter, so this clears a local copy the caller never sees (clearing the caller's pointer would need PBX_CHANNEL_TYPE **). Harmless: both call sites pass static structs. */
 }
 
 static int unload_module(void)

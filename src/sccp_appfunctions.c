@@ -1004,6 +1004,9 @@ static int sccp_func_sccpchannel(PBX_CHANNEL_TYPE * chan, NEWCONST char * cmd, c
 				sccp_copy_string(buf, c->privacy ? "yes" : "no", buf_len);
 			} else if (!strcasecmp(token, "softswitch_action")) {
 				snprintf(buf, buf_len, "%s (%d)", sccp_softswitch2str(c->softswitch_action), c->softswitch_action);
+				/* review 2026-09: cannot be uncommented - channel->monitorEnabled no longer exists; the
+				 * recording state moved to the device (d->monitorFeature.status, see sccp_management.c).
+				 * The XML documentation of this function never listed monitorEnabled either. */
 				// } else if (!strcasecmp(token, "monitorEnabled")) {
 				// sccp_copy_string(buf, c->monitorEnabled ? "yes" : "no", buf_len);
 			} else if (!strcasecmp(token, "videomode")) {
@@ -1148,6 +1151,9 @@ static int sccp_app_calledparty(PBX_CHANNEL_TYPE * chan, void * data)
 		return 0;
 	}
 
+	/* review 2026-09: the '!text' half is dead - the block above has already returned for a NULL text -
+	 * a remnant of merging two guards (one warned on NULL, one errored on empty). The empty-string
+	 * half is the one that works. */
 	if (!text || sccp_strlen_zero(text)) {
 		pbx_log(LOG_ERROR, "SCCPSetCalledParty: No valid party information provided: '%s'\n", text);
 		return 0;

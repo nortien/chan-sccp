@@ -24,6 +24,10 @@ SCCP_FILE_VERSION(__FILE__, "");
 /* forward declares */
 const sccp_transport_t tcptransport;
 
+/* review 2026-09: a CS_SCCP_TCP switch was planned to disable the TCP transport, but the condition
+ * is hard-coded '#if 1' and CS_SCCP_TCP is defined nowhere. The #else stub would not even compile
+ * - it declares tcp_init(uint8_t h) against the tcp_init(void) prototype. Disabling TCP has never
+ * been tested. */
 #if 1 /*CS_SCCP_TCP*/
 const sccp_transport_t * const tcp_init(void)
 {

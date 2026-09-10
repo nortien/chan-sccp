@@ -390,6 +390,11 @@ skinny_codec_t sccp_codec_findBestJoint(constChannelPtr c, const skinny_codec_t 
 	}
 
 	/* direction of the call determines who leads */
+	/* review 2026-09, a mechanism switched off, not litter: with the inbound branch commented out our
+	 * preferences lead the joint-codec choice in both directions, where the design let the remote
+	 * side lead on inbound calls. That changes which codec an inbound call ends up on when the two
+	 * lists disagree. The closing brace of the else is inside the comment as well. (The three
+	 * commented debug dumps just above are a different kind of leftover - plain debug output.) */
 	/*if (SKINNY_CALLTYPE_INBOUND == c->calltype){
 	        memcpy(leadPrefs, remotePeerPreferences, sizeof(skinny_codec_t) * SKINNY_MAX_CAPABILITIES);
 	        followPrefs = (skinny_codec_t *) ourPreferences;

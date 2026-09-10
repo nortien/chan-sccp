@@ -34,7 +34,7 @@ struct sccp_linedevice {
 	sccp_cfwd_information_t cfwd[SCCP_CFWD_SENTINEL];                                        //!< cfwd information
 
 	sccp_subscription_id_t subscriptionId;                                        //!< for addressing individual devices on shared line
-	char label[SCCP_MAX_LABEL];                                                   //!<
+	char label[SCCP_MAX_LABEL];                                                   //!<	/* review 2026-09: never written (memset at creation) or read; the per-device line label is built in sccp_actions.c from l->label and the subscriptionId label. Costs SCCP_MAX_LABEL bytes per line-device pair */
 	uint8_t lineInstance;                                                         //!< line instance of this->line on this->device
 }; /*!< SCCP Line-Device Structure */
 

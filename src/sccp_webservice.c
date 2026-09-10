@@ -266,6 +266,11 @@ static handler_t * get_request_handler(PBX_VARIABLE_TYPE * request_params)
 	return handler;
 }
 
+/* review 2026-09, stubs: parse_request_headers is one commented line and 'return 0' (locale unused
+ * - Accept-Language localisation never done) yet still called; parse_request_params and
+ * parse_request_uri below are commented out whole, as are their calls in request_parser;
+ * addTranslation nearby is the sole user of sccp_append_variable. Of the five planned
+ * request-parsing steps one and a half work (get_request_handler, parse_outputfmt). */
 static int parse_request_headers(PBX_VARIABLE_TYPE * request_headers, const char * locale)
 {
 	//locale = sccp_retrieve_str_variable_byKey(request_headers, "Accept-Language");
@@ -355,7 +360,7 @@ static int request_parser(struct ast_tcptls_session_instance * ser, enum ast_htt
 	}
 	// Process_XSLT_t process_side = parse_useragent(request_headers);
 
-	// sccp_xml_outputfmt_t outputfmt = handler->outputfmt;
+	// sccp_xml_outputfmt_t outputfmt = handler->outputfmt;	/* review 2026-09: handler_t.outputfmt is write-only - this and the XSLT block are its only readers and both are commented; the next line hard-codes HTML, so a handler registered as XML (testxml) is served with the HTML Content-Type unless the client passes outformat */
 	sccp_xml_outputfmt_t outputfmt = SCCP_XML_OUTPUTFMT_HTML;
 	result |= parse_outputfmt(request_params, request_headers, &outputfmt);
 	// const char *locale = NULL;
@@ -410,6 +415,11 @@ static int request_parser(struct ast_tcptls_session_instance * ser, enum ast_htt
 			    "Last-Modified: %s\r\n",
 			    outputfmt2contenttype[outputfmt], 1, cookie_timeout, timebuf);
 		// sccp_log(DEBUGCAT_WEBSERVICE) (VERBOSE_PREFIX_3 "SCCP: (request_parser) Returning Header:'%s'\n", pbx_str_buffer(http_header));
+		/* review 2026-09: the server-side XSLT block below no longer matches the API and cannot be
+		 * uncommented - findStylesheet() takes a const char *, not the handler_t* passed here, and
+		 * iXML.applyStyleSheet takes two arguments (sccp_xml.c), not five. The older attempt of the same
+		 * idea in sccp_webservice_xmltest is equally stale. The one live path is xmlPostProcess ->
+		 * iXML.applyStyleSheetByName. */
 		/*
 		if (handler->outputfmt == SCCP_XML_OUTPUTFMT_XML && handler->outputfmt != outputfmt && iXML.applyStyleSheet) {
 			addTranslation(request_params);
@@ -818,6 +828,12 @@ static boolean_t removeHandler(const char * const uri)
 }
 
 /* Assign to interface */
+/* review 2026-09: iWebService has no product consumer - the only two uses in the tree are the
+ * addHandler calls registering this file's own testhtml/testxml pages. isRunning, getBaseURL and
+ * removeHandler are dispatched from nowhere (getBaseURL was meant to feed the phones' service
+ * buttons from http.conf and was never connected); in iXML, createDocFromStr/createDocFromPbxStr
+ * and applyStyleSheet are equally unreferenced. The webservice+xml submodule exists for two
+ * self-test pages, all of it behind --enable-experimental-xml. */
 const WebServiceInterface iWebService = {
 	.isRunning     = isRunning,
 	.getBaseURL    = getBaseURL,

@@ -59,6 +59,11 @@ const uint8_t softkeysmap[32] = {
 	SKINNY_LBL_INTRCPT,
 	SKINNY_LBL_EMPTY,
 	SKINNY_LBL_DIAL,
+	/* review 2026-09: the 33rd entry that does not fit - softkeysmap is declared [32] here and in
+	 * sccp_softkeys.h, and the template request announces exactly these 32 labels. With CBARGE left
+	 * out, the {SKINNY_LBL_CBARGE, sccp_sk_cbarge} callback row and the whole sccp_feat_cbarge path
+	 * behind it are unreachable from any phone in any build. Restoring it means bumping both sizes
+	 * and re-checking every phone model's softkey rendering - not a one-line change. */
 	//SKINNY_LBL_CBARGE,
 };														/*!< SKINNY Soft Keys Map as INT */
 
@@ -307,6 +312,10 @@ static void sccp_sk_endcall(const sccp_softkeyMap_cb_t * const softkeyMap_cb, co
 		sccp_channel_endcall(c);
 	}
 
+/* review 2026-09, unfinished rewrite: the '#if 0 (new)' variant below always sends onhook after
+ * ending, the live code only on the 'more than one subscriber' branch. It cannot simply be
+ * switched on: both compute 'c->subscribers--' inside a condition, and the variant would apply the
+ * decrement a second time. A draft, never called. */
 #if 0														/* new */
 	if (!(c->calltype == SKINNY_CALLTYPE_INBOUND && 1 < c->subscribers--)) {
 		sccp_channel_endcall(c);

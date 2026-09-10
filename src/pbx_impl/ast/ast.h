@@ -103,6 +103,11 @@ SCCP_INLINE const char * SCCP_CALL pbxsccp_devicestate2str(uint32_t value);
 SCCP_INLINE const char * SCCP_CALL extensionstatus2str(uint32_t value);
 #endif
 
+/* review 2026-09, four prototypes without a definition or a caller in the tree: set_pbx_callerid
+ * and pbx_moh_start were replaced by the iPbx members sccp_astwrap_setCallerid* / moh_start;
+ * pbx_channel_search_locked is also shadowed by the '#define pbx_channel_search_locked
+ * ast_channel_search_locked' in define.h (a function modern Asterisk no longer has);
+ * sccp_search_remotepeer_locked is defined only in ast108/ast110/ast111. Harmless as declarations. */
 int set_pbx_callerid(PBX_CHANNEL_TYPE * ast_chan, sccp_callinfo_t * callInfo);
 #if UNUSEDCODE // 2015-11-01
 PBX_CHANNEL_TYPE *pbx_channel_walk_locked(PBX_CHANNEL_TYPE * target);
@@ -134,7 +139,7 @@ skinny_codec_t __CONST__ pbx_codec2skinny_codec(ast_format_type fmt);
 
 //ast_format_type skinny_codec2pbx_codec(skinny_codec_t codec);
 pbx_format_enum_type __CONST__ skinny_codec2pbx_codec(skinny_codec_t codec);
-//int skinny_codecs2pbx_codecs(const skinny_codec_t * const codecs);
+//int skinny_codecs2pbx_codecs(const skinny_codec_t * const codecs);    /* review 2026-09: old int-returning signature, superseded by the line below */
 pbx_format_type __PURE__ skinny_codecs2pbx_codecs(const skinny_codec_t * const codecs);
 
 // support for old uin32_t format (only temporarily

@@ -31,6 +31,8 @@
 typedef struct ast_format_cap ast_format_t;
 
 //int skinny_codecs2pbx_codec_pref(skinny_codec_t * skinny_codecs, struct ast_codec_pref *astCodecPref);
+/* review 2026-09: prototype without a definition, copied through all nine astNNN.h; nothing calls it.
+ * The function that sets the RTP peer address is sccp_astwrap_setPhoneRTPAddress (iPbx.rtp_setPhoneAddress). */
 int sccp_wrapper_asterisk_set_rtp_peer(PBX_CHANNEL_TYPE * ast, PBX_RTP_TYPE * rtp, PBX_RTP_TYPE * vrtp, PBX_RTP_TYPE * trtp, int codecs, int nat_active);
 const char *pbx_getformatname(const struct ast_format *format);
 const char *pbx_getformatname_multiple(char *buf, size_t size, struct ast_format_cap *format);

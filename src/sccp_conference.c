@@ -60,6 +60,11 @@
 ***/
 
 #ifdef CS_SCCP_CONFERENCE
+/* review 2026-09: this whole file is compiled only with --enable-conference (default 'no' in configure;
+ * debian/rules passes it, the bench builds pass it). Any finding here must be checked on a build that
+ * has the flag. The 'ASTERISK_VERSION_GROUP < 112' arms in this file (here, the participant setup,
+ * playback_to_conference and getUnderlyingChannel users) are the Asterisk 11-and-older bridging API:
+ * still allowed by MIN_ASTERISK_VERSION but not built for anything this fork targets. */
 
 #if ASTERISK_VERSION_GROUP < 112
 #include <asterisk/bridging.h>
@@ -154,7 +159,7 @@ void sccp_conference_play_music_on_hold_to_participant(constConferencePtr confer
 static sccp_participant_t *sccp_conference_createParticipant(constConferencePtr conference);
 static void sccp_conference_addParticipant_toList(constConferencePtr conference, constParticipantPtr participant);
 void pbx_builtin_setvar_int_helper(PBX_CHANNEL_TYPE * channel, const char *var_name, int intvalue);
-//static void sccp_conference_connect_bridge_channels_to_participants(constConferencePtr conference);
+//static void sccp_conference_connect_bridge_channels_to_participants(constConferencePtr conference);	/* review 2026-09: harmless only by order - the definition precedes its one call, so no prototype is needed; move the call above the definition and the build breaks while this looks like it "is" declared */
 static void sccp_conference_update_conflist(conferencePtr conference);
 void __sccp_conference_hide_list(participantPtr participant);
 void sccp_conference_invite_participant(constConferencePtr conference, constParticipantPtr moderator);
@@ -1322,6 +1327,12 @@ void sccp_conference_show_list(constConferencePtr conference, constChannelPtr ch
 			pbx_str_append(&xmlStr, 0, "<Position>5</Position>");
 			pbx_str_append(&xmlStr, 0, "<URL>UserDataSoftKey:Select:%d:MODERATE/%d</URL>", appID, participant->transactionID);
 			pbx_str_append(&xmlStr, 0, "</SoftKeyItem>\n");
+/* review 2026-09, unfinished on every phone-side path: the Invite softkey (here) and its action handler
+ * (the second '#if 0 INVITE' further down) are both off, and the reply to the CiscoIPPhoneInput form
+ * that sccp_conference_invite_participant sends lands in sccp_handle_device_to_user, where the
+ * APPID_CONFERENCE_INVITE case is commented '/ * Not Implemented * /'. The function itself is complete
+ * and reachable from the CLI ('sccp conference Invite') and from the XSL conflist (experimental-XML
+ * only). From a phone the feature cannot be reached in any build. */
 #if 0 /* INVITE */
 			pbx_str_append(&xmlStr, 0, "<SoftKeyItem>");
 			pbx_str_append(&xmlStr, 0, "<Name>Invite</Name>");
@@ -1467,7 +1478,7 @@ void sccp_conference_handle_device_to_user(devicePtr d, uint32_t callReference, 
 			}
 		} else if (!strcmp(d->dtu_softkey.action, "EXIT")) {
 			d->conferencelist_active = FALSE;
-#if 0 /* INVITE */
+#if 0 /* INVITE */	/* review 2026-09: the action half of the unfinished Invite softkey, see the note at the softkey's '#if 0' above */
 		} else if (!strcmp(d->dtu_softkey.action, "INVITE")) {
 			sccp_conference_invite_participant(conference, moderator);
 #endif
@@ -1527,6 +1538,11 @@ void *sccp_participant_kicker(void *data)
  * \brief Toggle Conference Lock
  * \note Not Used at the moment -> Commented out
  */
+/* review 2026-09, the only writer of conference->isLocked: with this under '#if 0' the flag is FALSE from
+ * creation for ever, and its four readers are dead branches - the admission check on join, the lock
+ * icon in the conflist, the refusal in invite_participant, and the 'isLocked = 1' branch of the XSL
+ * conflist (icon 5, still announced to the phone). Consumers written, switch not connected - the
+ * author's own '\note Not Used at the moment' above says as much. */
 #if 0
 static void sccp_conference_toggle_lock_conference(conferencePtr conference, constParticipantPtr participant)
 {

@@ -76,7 +76,7 @@ static void ShutdownSSL(SSL * ssl)
 static SSL_CTX * create_context(void)
 {
 	sccp_log(DEBUGCAT_SOCKET)(VERBOSE_PREFIX_1 "TLS Transport create context...\n");
-	// const SSL_METHOD * method = TLS_server_method();
+	// const SSL_METHOD * method = TLS_server_method();	/* review 2026-09: the modern method is off for OpenSSL 1.0.x compatibility; with SSLv23_method and only SSL_OP_NO_SSLv2 set, SSLv3 and TLS 1.0 stay allowed. Not live on the bench (no asterisk.pem -> tls_init returns NULL), but it becomes live the moment a certificate appears */
 	const SSL_METHOD * method = SSLv23_method();
 	SSL_CTX *          ctx    = SSL_CTX_new(method);
 	if (!ctx) {

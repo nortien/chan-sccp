@@ -138,6 +138,10 @@ static sccp_callinfo_t * callinfo_CopyConstructor(const sccp_callinfo_t * const 
 	return NULL;
 }
 
+/* review 2026-09: UNUSEDCODE is never defined (see chan_sccp.c), so callinfo_Copy is a permanent
+ * '#if 0'. It is switched off consistently in three places - this body, its slot in the iCallInfo
+ * vtable below and its declaration in sccp_callinfo.h - which keeps the aggregate initialiser's
+ * positions aligned. Do not enable one without the other two. */
 #if UNUSEDCODE // 2015-11-01
 static boolean_t callinfo_Copy(const sccp_callinfo_t * const src_ci, sccp_callinfo_t * const dst_ci)
 {
@@ -269,6 +273,11 @@ static int callinfo_Setter(sccp_callinfo_t * const ci, int key, ...)							// ke
 }
 
 //#if UNUSEDCODE // 2015-11-01
+/* review 2026-09, unfinished: the UNUSEDCODE guard around CopyByKey was itself commented out (here and
+ * the matching '//#endif' below), i.e. the function was deliberately brought back into the build, but
+ * no consumer followed: it sits in the iCallInfo vtable and in sccp_callinfo.h, and the only dispatch
+ * through the pointer is the unit test at the end of this file (CS_TEST_FRAMEWORK). Field copies in
+ * production go through the generic iCallInfo.Setter (sccp_channel.c, sccp_feature.c). */
 // clang complain about default argument promotion when using enum instead of int for the key
 // previous: static int callinfo_CopyByKey(const sccp_callinfo_t * const src_ci, sccp_callinfo_t * const dst_ci, sccp_callinfo_key_t key, ...)
 static int callinfo_CopyByKey(const sccp_callinfo_t * const src_ci, sccp_callinfo_t * const dst_ci, int key, ...)	// key is a va_arg of type sccp_callinfo_key_t
@@ -564,6 +573,11 @@ static int callinfo_SetOrigCallingParty(sccp_callinfo_t * const ci, const char n
 	return iCallInfo.Setter(ci, SCCP_CALLINFO_ORIG_CALLINGPARTY_NAME, name, SCCP_CALLINFO_ORIG_CALLINGPARTY_NUMBER, number, SCCP_CALLINFO_KEY_SENTINEL);
 }
 
+/* review 2026-09: a vtable slot nobody dispatches - iCallInfo.SetLastRedirectingParty has zero callers
+ * (the sibling helpers SetOrigCallingParty/SetOrigCalledParty/SetCalledParty/SetCallingParty do). Not
+ * lost functionality: callers set the last-redirecting fields through the generic Setter with the
+ * SCCP_CALLINFO_LAST_REDIRECTINGPARTY_* keys directly. Removing it would mean removing the slot and
+ * the .h line too - the aggregate initialiser is positional. */
 static int callinfo_SetLastRedirectingParty(sccp_callinfo_t * const ci, const char name[StationMaxNameSize], const char number[StationMaxDirnumSize], const char voicemail[StationMaxDirnumSize], const int reason)
 {
 	pbx_assert(ci != NULL);

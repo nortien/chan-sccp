@@ -32,6 +32,8 @@ union sockaddr_union {
 	struct sockaddr_in6 sin6;
 };
 
+/* review 2026-09: no callers; the reverse direction, storage2ast_sockaddr, is live
+ * (sccp_session.c). Code that needs the storage takes &internip.ss directly. */
 gcc_inline struct sockaddr_storage * ast_sockaddr2storage(struct ast_sockaddr * src)
 {
 	return &src->ss;
@@ -523,6 +525,10 @@ void sccp_netsock_setoptions(int new_socket, int reuse, int linger, int keepaliv
 	}
 
 	/* keepalive */
+	/* review 2026-09: unreachable - both callers (sccp_session.c, accepted and listening socket) pass
+	 * keepalive = -1, so SO_KEEPALIVE/TCP_KEEPIDLE/TCP_KEEPINTVL/TCP_KEEPCNT are never set. This
+	 * contradicts the 'only does TCP-Keepalive' assumption in sccp_session.c's token thread; see that
+	 * finding. */
 	if (keepalive > -1) {
 		int ip_keepidle  = keepalive;									/* The time (in seconds) the connection needs to remain idle before TCP starts sending keepalive probes */
 		int ip_keepintvl = keepalive;									/* The time (in seconds) between individual keepalive probes, once we have started to probe. */

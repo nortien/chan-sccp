@@ -102,7 +102,7 @@ static const struct skinny_label {
 	{"Service is not Active", SKINNY_LBL_SERVICE_IS_NOT_ACTIVE},
 	{"High Traffic Try Again Later", SKINNY_LBL_HIGH_TRAFFIC_TRY_AGAIN_LATER},
 	{"Quality Reporting Tool", SKINNY_LBL_QUALITY_REPORT_TOOL},
-//	{"Hunt Group Log-In/Out", SKINNY_LBL_HUNT_GROUP},
+//	{"Hunt Group Log-In/Out", SKINNY_LBL_HUNT_GROUP},	/* review 2026-09: SKINNY_LBL_HUNT_GROUP no longer exists (renamed to SKINNY_LBL_HLOG, with LOGGED_OUT_OF_HUNT_GROUP beside it) - would not compile; the hunt-group key is not in softkeysmap either */
 	{"Malicious Call Identification", SKINNY_LBL_MALICIOUS_CALL_IDENTIFICATION},
 	{"DirTrfr", SKINNY_LBL_DIRTRFR},
 	{"Select", SKINNY_LBL_SELECT},

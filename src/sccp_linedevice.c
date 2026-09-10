@@ -73,6 +73,11 @@ static void regcontext_exten(constLineDevicePtr ld, int onoff)
 		return;
 	}
 	sccp_line_t * l = ld->line;
+	/* review 2026-09, unfinished: registering 'ext@subscriptionId.number' at priority 2 (to address
+	 * one phone of a shared line, e.g. via DUNDi) is commented out in both halves below, and this
+	 * variable with it. The type changed underneath (sccp_subscription_id_t now), the extension/name
+	 * arrays are not declared, and the doxygen still documents a subscriptionId parameter the function
+	 * no longer takes. Would not compile as-is. */
 	// struct subscriptionId *subscriptionId = &(ld->subscriptionId);
 
 	sccp_copy_string(multi, S_OR(l->regexten, l->name), sizeof(multi));

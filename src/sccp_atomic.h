@@ -42,6 +42,11 @@
 #endif
 
 #else														/* SCCP_ATOMIC */
+/* review 2026-09: the commented i386/x86_64 fast path via ast_atomic_fetchadd_int was dropped in favour
+ * of the one mutex-backed emulation below - Asterisk's internal atomics API moved between the versions
+ * this driver spans (ast106..ast123), and a single portable variant is cheaper to keep. The CAS32_TYPE
+ * define moved to src/define.h. This whole #else branch is only compiled when configure found neither
+ * compiler builtins nor libatomic_ops (SCCP_ATOMIC undefined) - not the case on any bench. */
 //#define CAS32_TYPE			int
 //#if defined (__i386__) || defined(__x86_64__)
 //#define ATOMIC_INCR(_a,_b,_c)	 	ast_atomic_fetchadd_int(_a, _b)

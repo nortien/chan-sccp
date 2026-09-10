@@ -175,6 +175,11 @@ boolean_t sccp_prePBXLoad(void)
 	GLOB(privacy) = TRUE;											/* permit private function */
 	GLOB(mwilamp) = SKINNY_LAMP_ON;
 	GLOB(ringtype) = SKINNY_RINGTYPE_OUTSIDE;
+	/* review 2026-09: cannot be switched back on - struct sccp_global_vars has no protocolversion
+	 * member any more (this #if 0 is the only GLOB(protocolversion) in the tree). The global
+	 * setting was retired when the protocol version became a per-device negotiation
+	 * (d->protocolversion, sccp_session.c / sccp_device.c); the config entry is flagged
+	 * SCCP_CONFIG_FLAG_OBSOLETE in sccp_config_entries.hh. Kept as the trace of that change. */
 	#if 0
 	GLOB(protocolversion) = SCCP_DRIVER_SUPPORTED_PROTOCOL_HIGH;
 	#endif
@@ -230,6 +235,10 @@ boolean_t sccp_postPBX_load(void)
 	return TRUE /* ? */;
 }
 
+/* review 2026-09: UNUSEDCODE is defined nowhere (not in configure.ac, the m4 files or any header), so
+ * every '#if UNUSEDCODE' in the tree is a permanent '#if 0' - the project's way of shelving code with
+ * a date instead of deleting it. This one is a scheduler free-callback that nothing has referenced
+ * since; no prototype survives either. */
 #if UNUSEDCODE // 2015-11-01
 /*!
  * \brief Schedule free memory

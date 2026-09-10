@@ -83,7 +83,7 @@ struct sccp_hint_lineState
  * \brief SCCP Hint List Structure
  */
 struct sccp_hint_list {
-	//pbx_mutex_t lock;                                                                                       /*!< Asterisk Lock */
+	//pbx_mutex_t lock;                                                                                       /*!< Asterisk Lock */	/* review 2026-09: the per-hint lock was removed together with its init (commented sccp_mutex_init further down); hints are protected by the list lock */
 
 	char exten[SCCP_MAX_EXTENSION];										/*!< Extension for Hint */
 	char context[SCCP_MAX_CONTEXT];										/*!< Context for Hint */
@@ -95,6 +95,10 @@ struct sccp_hint_list {
 	/*!
 	 * \brief Call Information Structure
 	 */
+	/* review 2026-09: the commented inline struct is the old callInfo storage, displaced by the shared
+	 * sccp_callinfo_t object on the next line. Note that struct sccp_hint_lineState further down still
+	 * keeps the inline form alive - two callinfo stores coexist, which is the one reason this stale
+	 * copy is still informative. */
 	//struct {
 	//	char partyNumber[StationMaxNameSize];								/*!< Calling Party Name */
 	//	char partyName[StationMaxNameSize];								/*!< Called Party Name */
@@ -898,6 +902,11 @@ static void sccp_hint_updateLineStateForSingleChannel (struct sccp_hint_lineStat
 	AUTO_RELEASE(sccp_line_t, line, sccp_line_retain(lineState->line));
 	// sccp_channelstate_t state = SCCP_CHANNELSTATE_SENTINEL;
 
+	/* review 2026-09, behaviour changed and worth knowing: the device-privacy check (dev_privacy, its
+	 * assignment from device->privacyFeature.enabled and the guard around the name/number update) was
+	 * commented out and replaced by the 'presentation == CALLERID_PRESENTATION_FORBIDDEN' test below.
+	 * Before, privacy=on on the WATCHING device hid names on its BLF keys; now only a presentation
+	 * restriction carried by the call itself hides them. */
 	//boolean_t dev_privacy = FALSE;
 
 	/** clear cid information */

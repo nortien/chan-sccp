@@ -12,6 +12,9 @@
 
 __BEGIN_C_EXTERN__
 // sccp_buttonconfig_list_t externally declared in sccp_device.h, required by sccp_config_addButton
+/* review 2026-09: declares a global that exists nowhere - no definition, no use. sccp_config_addButton
+ * takes the list as a parameter (the typedef from forward_declarations.h is all it needs) and the
+ * list itself lives inside each device. Taking this symbol's address would fail to link. */
 extern struct sccp_buttonconfig_list sccp_buttonconfig_list;
 
 /*!
@@ -63,7 +66,7 @@ SCCP_API sccp_configurationchange_t SCCP_CALL sccp_config_applyDeviceConfigurati
 // SCCP_API sccp_configurationchange_t SCCP_CALL sccp_config_applyDeviceDefaults(sccp_device_t * device, PBX_VARIABLE_TYPE * variable);
 
 SCCP_API void SCCP_CALL sccp_config_softKeySet(PBX_VARIABLE_TYPE * variable, const char *name);
-SCCP_API void SCCP_CALL sccp_config_restoreDeviceFeatureStatus(devicePtr device);
+SCCP_API void SCCP_CALL sccp_config_restoreDeviceFeatureStatus(devicePtr device);	/* review 2026-09: declared, defined nowhere; both call sites (sccp_device.c, sccp_config.c) are commented out. The job - restoring cfwd/dnd/privacy/monitor/lastDialedNumber from astdb - moved to sccp_device_postregistration. Links only because nothing references the symbol. */
 
 SCCP_API int SCCP_CALL sccp_config_generate(char *filename, int configType);
 __END_C_EXTERN__

@@ -1,6 +1,6 @@
 /*!
- * \file	sccp_featureParkingLot.c
- * \brief	SCCP ParkingLot Class
+ * \file	sccp_mwi.c		(review 2026-09: this header was copied from sccp_featureParkingLot.c and named the wrong file and class)
+ * \brief	SCCP MWI Class
  * \author	Diederik de Groot <ddegroot [at] users.sf.net>
  * \date	2015-Sept-16
  * \note	This program is free software and may be modified and distributed under the terms of the GNU Public License.
@@ -193,6 +193,12 @@ static void pbxMailboxUnsubscribe(mwi_subscription_t *subscription)
 #	endif
 	}
 }
+/* review 2026-09: what follows is the cut-out '#else' (MWI_USE_POLLING) branch for a PBX with
+ * neither ast_event nor stasis. configure can still pick that branch - and the initialiser in
+ * asterisk.m4 spells the variable MWI_USE_EVENTS (with an S) while the test reads MWI_USE_EVENT,
+ * so with no event API found the shell test errors and POLLING is defined - yet the code here does
+ * not compile (mailbox, newmsgs, oldmsgs, interval, subscription->sched do not exist; the struct
+ * then lacks pbx_subscription). Unreachable in practice: Asterisk 13+ always has stasis. */
 /* discard polling implementation */
 /*
 #else

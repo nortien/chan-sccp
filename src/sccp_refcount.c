@@ -53,6 +53,10 @@ SCCP_FILE_VERSION(__FILE__, "");
 
 static enum sccp_refcount_runstate runState = SCCP_REF_STOPPED;
 
+/* review 2026-09: this branch is the alternative refcount over Asterisk's ao2_*; the native
+ * implementation under #else (with quarantine and reaper) is the one built here. With the flag on,
+ * sccp_refcount_updateIdentifier is an empty return and sccp_show_refcount prints nothing - the
+ * flag silently disables the diagnostics. */
 #ifdef CS_ASTOBJ_REFCOUNT
 void sccp_refcount_init(void)
 {
@@ -203,7 +207,7 @@ struct refcount_object {
 #ifndef SCCP_ATOMIC
 	ast_mutex_t lock;
 #endif
-	// volatile CAS32_TYPE refcount;
+	// volatile CAS32_TYPE refcount;	/* review 2026-09: volatile dropped on purpose - the counter is only touched through ATOMIC_INCR/ATOMIC_FETCH/CAS32, which provide the barriers; volatile would only hinder the optimiser. The commented ANNOTATE_HAPPENS_* nearby are helgrind annotations */
 	CAS32_TYPE refcount;
 	enum sccp_refcounted_types type;
 	char identifier[REFCOUNT_INDENTIFIER_SIZE];
@@ -297,7 +301,7 @@ void sccp_refcount_init(void)
 	ref_debug_size = 0;
 	__rotate_debug_file();
 #endif
-//	memset(objects, 0, sizeof(RefCountedObject) * SCCP_HASH_PRIME);
+//	memset(objects, 0, sizeof(RefCountedObject) * SCCP_HASH_PRIME);	/* review 2026-09: off because it was a bug - objects is an array of struct pointers, and sizeof(RefCountedObject) * PRIME would have zeroed far past its end; the static '= {0}' initialiser already covers it */
 	SCCP_RWLIST_HEAD_INIT(&quarantine);
 	runState = SCCP_REF_RUNNING;
 	reaper_stop = 0;
@@ -554,6 +558,10 @@ static gcc_inline RefCountedObject * sccp_refcount_find_obj(const void * const p
 		return obj;
 	} else {
 		/* Replace seperate log lines with one line of debug */
+		/* review 2026-09: '!obj' can never be true - container_of over a ptr already checked for NULL is
+		 * pointer arithmetic, not a lookup. Worse, it reads as a safeguard while the next line
+		 * dereferences obj->data unconditionally; had obj been NULL the code would fall over one line
+		 * below its own log message. */
 		if (!obj) {
 			sccp_log((DEBUGCAT_REFCOUNT)) (VERBOSE_PREFIX_1 "SCCP: (sccp_refcount_find_obj) failed to find obj using container_of for %p\n", ptr);
 		}

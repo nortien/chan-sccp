@@ -182,6 +182,11 @@ static int sccp_feat_perform_pickup(constDevicePtr d, channelPtr c, PBX_CHANNEL_
 			 SCCP_CALLINFO_CALLEDPARTY_NUMBER, &called_number, SCCP_CALLINFO_KEY_SENTINEL);
 
 	{
+		/* review 2026-09, unfinished: the commented ast_party_redirecting setup here is the PBX half of
+		 * pickup redirection. The SCCP half is live (LAST_REDIRECTINGPARTY_* and HUNT_PILOT go into
+		 * callinfo below); without ast_channel_set_redirecting a SIP caller never learns the call was
+		 * picked up and no Diversion/History-Info is sent. The author's note on the next line records the
+		 * open question. */
 		// BTW: Remote end should change it's calltype for callinfo to FORWARD, upon pickup. Not sure how to inform them
 		// iCallInfo.Send(ci, c->callid, SKINNY_CALLTYPE_FORWARD, lineInstance, d, TRUE);
 		/*
@@ -952,6 +957,8 @@ static void *sccp_feat_meetme_thread(void *data)
 #define SCCP_CONF_SPACER ','
 #endif
 
+/* review 2026-09: unreachable in any build configure allows - MIN_ASTERISK_VERSION is 106, so '<
+ * 10600' is always false and the '>= 10600' arm is the only one ever compiled. */
 #if ASTERISK_VERSION_NUMBER >= 10400 && ASTERISK_VERSION_NUMBER < 10600
 #define SCCP_CONF_SPACER '|'
 #endif
@@ -1184,6 +1191,13 @@ int sccp_feat_singleline_barge(channelPtr c, const char * const exten)
 
 	// check privacy on ast channel
 	// check already barged on ast channel
+	/* review 2026-09: this line and the commented block further down (notifying the barged party,
+	 * setting barge_info->bargedChannel) are a stale copy that would not compile - old type name
+	 * sccp_linedevices_t, a 'pbxchannel' variable this function does not have. Consequence today: on a
+	 * single-line (ExtenSpy) barge bargedChannel stays NULL, the barged phone gets no 'BARGE FROM'
+	 * message (the shared-line path does send it), isBarged is never set, so the ANOTHER_BARGE_EXISTS
+	 * guard does not cover single-line barges. cleanupTempExtensionContext copes with the NULL; no
+	 * leak. */
 	//bargedChannel->isBarged = TRUE;
 	// retrieve list of channeltypes
 

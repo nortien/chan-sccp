@@ -96,6 +96,9 @@ static void sccp_protocol_sendCallInfoV3 (const sccp_callinfo_t * const ci, cons
 	device->copyStr2Locale(device, msg->data.CallInfoMessage.lastRedirectingParty, msg->data.CallInfoMessage.lastRedirectingParty, sizeof(msg->data.CallInfoMessage.lastRedirectingParty));
 	device->copyStr2Locale(device, msg->data.CallInfoMessage.lastRedirectingVoiceMailbox, msg->data.CallInfoMessage.lastRedirectingVoiceMailbox, sizeof(msg->data.CallInfoMessage.lastRedirectingVoiceMailbox));
 
+	/* review 2026-09: switched off by making the exception universal - the live line below applies the
+	 * non-reversed presentation interpretation to every device, and the if/else is kept as the record
+	 * of which model forced that. */
 	// 7920's exception. They don't seem to reverse the interpretation of the presentation flag
 	// if (device->skinny_type == SKINNY_DEVICETYPE_CISCO7920) {
 	//	msg->data.CallInfoMessage.partyPIRestrictionBits = presentation ? 0x0 : 0xf;
@@ -1325,7 +1328,7 @@ static void sccp_protocol_sendUserToDeviceDataVersion1Message(constDevicePtr dev
 			
 			sccp_dev_send(device, msg);
 			sccp_log(DEBUGCAT_HIGH) (VERBOSE_PREFIX_1 "%s: (sccp_protocol_sendUserToDeviceDataVersion1Message) Message sent to device  (hdr_len: %d, msglen: %d/%d, msg-size: %d).\n", DEV_ID_LOG(device), hdr_len, msg_len, (int) strlen(xmlData), hdr_len + msg_len);
-			segment++;
+			segment++;	/* review 2026-09: dead counter - the message has no per-segment index field, lel_sequenceFlag (first/middle/last) carries the position; incremented, never read */
 		}
 	} else if (data_len <= StationMaxXMLMessage) {							/* the packet is sized to the data; a message of exactly the maximum fell between the two branches and was never sent */
 		sccp_msg_t *msg = NULL;
@@ -1503,6 +1506,10 @@ static void sccp_protocol_sendLineStatRespV17(constDevicePtr d, uint32_t lineNum
 	sccp_dev_send(d, msg);
 }
 
+/* review 2026-09: the block below is the OLDER sendLineStatRespV17 (fixed-field encoding) kept next to
+ * the live one above (packed dynamic payload built by hand). It has rotted: it writes lineDirNumber /
+ * lineFullyQualifiedDisplayName / lineTextLabel / lel_lineDisplayOptions, and all four members are
+ * themselves commented out of LineStatDynamicMessage in sccp_protocol.h - it would not compile. */
 /*
 static void sccp_protocol_sendLineStatRespV17(constDevicePtr d, uint32_t lineNumber, char *dirNumber, char *fullyQualifiedDisplayName, char *displayName)
 {
@@ -1847,6 +1854,9 @@ static const sccp_deviceProtocol_t *spcpProtocolDefinition[] = {
 /*! 
  * \brief Get Maximum Supported Version Number by Protocol Type
  */
+/* review 2026-09: exported and declared, no live caller - its only mention is a commented log line
+ * in handle_register (the old protocol-negotiation logging). Survives because SCCP_API keeps
+ * -Wunused-function quiet; the sibling sccp_protocol_isProtocolSupported IS live (sccp_session.c). */
 uint8_t __CONST__ sccp_protocol_getMaxSupportedVersionNumber(int type)
 {
 	switch (type) {

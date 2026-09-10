@@ -45,7 +45,7 @@ int __sccp_channel_destroy(const void * data);
 #define sccp_channel_lock(x)    pbx_mutex_lock(&(x)->lock)
 #define sccp_channel_unlock(x)  pbx_mutex_unlock(&(x)->lock)
 #define sccp_channel_trylock(x) pbx_mutex_trylock(&(x)->lock)
-//#define SCOPED_SESSION(x)       SCOPED_MUTEX(channellock, (ast_mutex_t *)&(x)->lock);
+//#define SCOPED_SESSION(x)       SCOPED_MUTEX(channellock, (ast_mutex_t *)&(x)->lock);	/* review 2026-09: unfinished RAII lock for the channel, copied from sccp_session.c (hence the SESSION name on a channel body); never used anywhere */
 /* */
 
 AST_MUTEX_DEFINE_STATIC(callCountLock);
@@ -280,6 +280,10 @@ channelPtr sccp_channel_allocate(constLinePtr l, constDevicePtr device)
 		channel->makeProgress = makeProgress;
 		channel->setMicrophone = setMicrophoneState;
 		channel->hangupRequest = sccp_astgenwrap_requestQueueHangup;
+		/* review 2026-09, switched off on purpose, not an unfinished feature: channel->privacy itself is
+		 * live (the Private softkey toggles it, sccp_indicate/sccp_feature/sccp_appfunctions/sccp_pbx read
+		 * it, it is reset to FALSE on channel clean). What was disabled is the pre-seeding from the
+		 * device's privacyFeature - privacy became a per-call, manual toggle rather than an inherited one. */
 		//channel->privacy = (device && (device->privacyFeature.status & SCCP_PRIVACYFEATURE_CALLPRESENT)) ? TRUE : FALSE;
 		if (device) {
 			channel->dtmfmode = device->getDtmfMode(device);
@@ -420,7 +424,10 @@ EXIT:
 
 	sccp_linedevice_refreplace(&channel->privateData->ld, NULL);
 	/* \todo we should use */
-	// sccp_line_copyMinimumCodecSetFromLineToChannel(l, c); 
+	// sccp_line_copyMinimumCodecSetFromLineToChannel(l, c);
+	/* review 2026-09: a recorded intention, not disabled code - sccp_line_copyMinimumCodecSetFromLineToChannel
+	 * exists nowhere in the tree (no definition, no prototype); the live sccp_line_copyCodecSetsFromLineToChannel
+	 * copies the whole sets. Uncommenting would not build. */
 	sccp_copy_string(channel->currentDeviceId, "SCCP", sizeof(char[StationMaxDeviceNameSize]));
 	channel->dtmfmode = SCCP_DTMFMODE_RFC2833;
 	channel->setEarlyRTP(channel, FALSE);
@@ -549,6 +556,11 @@ static boolean_t sccp_channel_recalculateVideoCodecFormat(channelPtr channel)
 			}
 			return FALSE;
 		}
+		/* review 2026-09, DO NOT restore this guard: it was commented out on purpose by 49f306ca "Fix:
+		 * Incoming Video on asterisk-13 and lower". On an incoming video call the native video format
+		 * must be set before the video RTP instance exists (it is created later), otherwise Asterisk
+		 * never learns the video format and no video flows. The audio twin above keeps its
+		 * 'if (channel->rtp.audio.instance)' - that asymmetry is intended, not a typo. */
 		//if (channel->rtp.video.instance) {
 		skinny_codec_t codecs[SKINNY_MAX_CAPABILITIES] = { joint, SKINNY_CODEC_NONE};
 		iPbx.set_nativeVideoFormats(channel, codecs);
@@ -894,6 +906,10 @@ int sccp_channel_receiveChannelOpen(sccp_device_t *d, sccp_channel_t *c)
 	}
 
 	sccp_log((DEBUGCAT_RTP))(VERBOSE_PREFIX_3 "%s: Opened Receive Channel (State: %s[%d])\n", d->id, sccp_channelstate2str(c->state), c->state);
+	/* review 2026-09: leftover of the old signature - there is no 'sas' in this function any more. The
+	 * phone address used to arrive as a parameter of the OpenReceiveChannelAck handler and was applied
+	 * here; d192e35b moved the parsing into sccp_actions.c, where sccp_rtp_set_phone is now called.
+	 * Uncommenting would not build. */
 	//sccp_rtp_set_phone(c, &c->rtp.audio, &sas);
 	sccp_channel_send_callinfo(d, c);
 	sccp_rtp_appendState(audio, SCCP_RTP_RECEPTION, SCCP_RTP_STATUS_ACTIVE);
@@ -944,6 +960,11 @@ void sccp_channel_closeReceiveChannel(constChannelPtr channel, boolean_t KeepPor
 	// stop transmitting before closing receivechannel (\note maybe we should not be doing this here)
 	//sccp_channel_stopMediaTransmission(channel, KeepPortOpen);
 	//sccp_rtp_stop(channel);
+	/* review 2026-09, switched off with the author's doubt recorded above. The order of closing matters
+	 * to the 79xx phones (the phone log shows "OpenIngressChan: Potential buffer leak" when it is wrong,
+	 * see the \test note in this file), so this is a deliberate choice, not a leftover. Note the video
+	 * twin, closeMultiMediaReceiveChannel, still calls stopMultiMediaTransmission - the audio/video
+	 * asymmetry is the same one as with the NAT address update further down. */
 
 	if(sccp_rtp_getState(audio, SCCP_RTP_RECEPTION)) {
 		sccp_log((DEBUGCAT_RTP)) (VERBOSE_PREFIX_3 "%s: Close receivechannel on device %s (KeepPortOpen: %s)\n", channel->designator, d->id, KeepPortOpen ? "YES" : "NO");
@@ -960,6 +981,11 @@ void sccp_channel_closeReceiveChannel(constChannelPtr channel, boolean_t KeepPor
 	}
 }
 
+/* review 2026-09: UNUSEDCODE is never defined (see chan_sccp.c), so this and the two other update*()
+ * functions below (updateMultiMediaReceiveChannel, updateMultiMediaTransmission) are permanent '#if 0'
+ * - a shelved 2015 experiment in changing codecs on the fly without closing the receive channel, as
+ * the two \todo lines say. Their audio twin sccp_channel_updateMediaTransmission stayed live (called
+ * from sccp_rtp_set_peer). The prototypes in sccp_channel.h sit under the same guard. */
 #if UNUSEDCODE // 2015-11-01
 void sccp_channel_updateReceiveChannel(constChannelPtr channel)
 {
@@ -1100,6 +1126,10 @@ void sccp_channel_stopMediaTransmission(constChannelPtr channel, boolean_t KeepP
 		msg->data.StopMediaTransmission.lel_portHandlingFlag = htolel(KeepPortOpen);
 		sccp_dev_send(d, msg);
 		sccp_rtp_setState(audio, SCCP_RTP_TRANSMISSION, SCCP_RTP_STATUS_INACTIVE);
+		/* review 2026-09: CS_EXPERIMENTAL is off in every normal build (--enable-experimental-mode, "only
+		 * for developers"), so this explicit PortClose to the phone is not sent - here nor in the video
+		 * twin in closeMultiMediaReceiveChannel. sendPortClose itself is live through the protocol
+		 * tables; only these two call sites are gated. Developer-only feature, not rot. */
 #ifdef CS_EXPERIMENTAL
 		if (!KeepPortOpen) {
 			d->protocol->sendPortClose(d, channel, SKINNY_MEDIA_TYPE_AUDIO);
@@ -1170,6 +1200,12 @@ void sccp_channel_openMultiMediaReceiveChannel(constChannelPtr channel)
 		return;
 	}
 
+	/* review 2026-09: the NAT address update for VIDEO is commented out here and again in
+	 * startMultiMediaTransmission, while the audio path keeps the same call live. Switched off by
+	 * 625eac17 "Fix automatic video enabled by default" - with video on by default the call fired on
+	 * channels whose video instance did not exist yet, and the fix was the blunt one. The consequence
+	 * is a separate defect finding (behind NAT the phone is told the PBX's internal address for the
+	 * video stream); the proper fix is a guard on the instance, not this comment. */
 	//if (d->nat >= SCCP_NAT_ON) {
 	//	sccp_rtp_updateNatRemotePhone(channel, video);
 	//}
@@ -1211,6 +1247,9 @@ int sccp_channel_receiveMultiMediaChannelOpen(constDevicePtr d, channelPtr c)
 	if (c->owner && (c->state == SCCP_CHANNELSTATE_CONNECTED || c->state == SCCP_CHANNELSTATE_CONNECTEDCONFERENCE)) {
 		if(sccp_rtp_getState(video, SCCP_RTP_TRANSMISSION) & SCCP_RTP_STATUS_ACTIVE) {
 			d->protocol->sendMultiMediaCommand(d, c, SKINNY_MISCCOMMANDTYPE_VIDEOFASTUPDATEPICTURE);
+			/* review 2026-09, abandoned draft: a FlowControlNotifyMessage (video bit-rate cap of 500000)
+			 * assembled and never sent - there is no sccp_dev_send, no msg_out variable in this function,
+			 * and 'if (!msg_out) {return;}' in an int-returning function would not even compile. */
 			// msg_out = sccp_build_packet(FlowControlNotifyMessage, sizeof(msg_out->data.FlowControlNotifyMessage));
 			// if (!msg_out) {return;}
 			// msg_out->data.FlowControlNotifyMessage.lel_conferenceID         = htolel(c->callid);
@@ -1265,6 +1304,10 @@ void sccp_channel_closeMultiMediaReceiveChannel(constChannelPtr channel, boolean
 	((channelPtr)channel)->videomode = channel->line->videomode;								// discard const
 }
 
+/* review 2026-09: shelved with updateReceiveChannel (see the note there) and no longer even
+ * compilable - the second getState below reads '&channel.rtp.video' on a pointer (the first line of
+ * the same function has the correct '&channel->rtp.video'). The typo came in after the block was
+ * switched off, during a signature refactor nobody could build-check here. Dead for good. */
 #if UNUSEDCODE // 2015-11-01
 void sccp_channel_updateMultiMediaReceiveChannel(constChannelPtr channel)
 {
@@ -1343,6 +1386,11 @@ void sccp_channel_startMultiMediaTransmission(constChannelPtr channel)
 
 int sccp_channel_multiMediaTransmissionStarted(constDevicePtr d, channelPtr c)
 {
+	/* review 2026-09: the three commented lines are the whole PREVIOUS body of this function, left above
+	 * the real implementation that 625eac17 "Fix automatic video enabled by default" wrote below. They
+	 * are a trap: the commented 'return SCCP_RTP_STATUS_ACTIVE' sits before the assert, so uncommenting
+	 * turns the function back into a stub with no state check. Both live equivalents exist further down
+	 * (VIDUPDATE) and in sccp_channel_setVideoMode (_SCCP_VIDEO_MODE). */
 	//pbx_builtin_setvar_helper(c->owner, "_SCCP_VIDEO_MODE", sccp_video_mode2str(sccp_channel_getVideoMode(c)));
 	//iPbx.queue_control(c->owner, AST_CONTROL_VIDUPDATE);
 	//return SCCP_RTP_STATUS_ACTIVE;
@@ -1407,6 +1455,8 @@ void sccp_channel_stopMultiMediaTransmission(constChannelPtr channel, boolean_t 
 	}
 }
 
+/* review 2026-09: third member of the shelved update*() family (see updateReceiveChannel); permanent
+ * '#if 0' via the undefined UNUSEDCODE. Its prototype in sccp_channel.h is under the same guard. */
 #if UNUSEDCODE // 2015-11-01
 void sccp_channel_updateMultiMediaTransmission(constChannelPtr channel)
 {
@@ -1679,6 +1729,9 @@ channelPtr sccp_channel_getEmptyChannel(constLinePtr l, constDevicePtr d, channe
 			}
 		}
 	}
+	/* review 2026-09: '!channel' here is always true - channel is NULL from its declaration and the only
+	 * assignment above returns straight away. A fossil of an earlier shape of this function, where a
+	 * reused channel fell through to a common exit; it now only hides the control flow. */
 	if (!channel && !(channel = sccp_channel_allocate(l, d))) {
 		pbx_log(LOG_ERROR, "%s: Can't allocate SCCP channel for line %s\n", d->id, l->name);
 		return NULL;
@@ -1847,6 +1900,12 @@ static void channel_answer_completion(constChannelPtr channel)
 					sccp_channel_openMultiMediaReceiveChannel(c);
 				}
 #endif
+				/* review 2026-09, moved not forgotten: this block and its live twin in sccp_channel_answer()
+				 * ("Hanging up sharing subscribers") came in the same commit, 7d2ea9f1 "Fix: race condition
+				 * when shared lines answer at the same time". Silencing the other phones of a shared line
+				 * here - after the OpenReceiveChannelAck, in the answer-completion callback - let two
+				 * phones answer one call; the fix moved it forward to the moment Answer is pressed and
+				 * left the old position commented. The "Hangingup up" typo survives only in this copy. */
 				/*
 								AUTO_RELEASE(sccp_line_t, l, sccp_line_retain(c->line));
 								if (l && SCCP_LIST_GETSIZE(&l->devices) > 1) {
@@ -2052,6 +2111,10 @@ int sccp_channel_hold(channelPtr channel)
 			iPbx.queue_control_data(channel->owner, AST_CONTROL_HOLD, channel->musicclass, sccp_strlen(channel->musicclass) + 1);
 		}
 	}
+	/* review 2026-09, off on purpose: on hold the RTP stream is closed by the HOLD indication two lines
+	 * down (see its comment) but the pbx-side instance is kept; sccp_rtp_stop here would tear that
+	 * instance down as well, forcing a re-create on resume and losing audio - the same reason is
+	 * recorded in sccp_rtp.c ("we get an audio issue when resume on the same device"). */
 	//sccp_rtp_stop(channel);
 	sccp_dev_setActiveLine(d, NULL);
 	sccp_indicate(d, channel, SCCP_CHANNELSTATE_HOLD);							// this will also close (but not destroy) the RTP stream
@@ -2314,6 +2377,9 @@ void sccp_channel_clean(channelPtr channel)
 		pbx_setstate(channel->owner, AST_STATE_DOWN);
 		/* postponing ast_channel_unref to sccp_channel destructor */
 		//iPbx.set_owner(channel, NULL);
+		/* review 2026-09: deliberate, as the line above says - the owner is released in __sccp_channel_destroy
+		 * instead, so the pbx thread that may still be working on this channel does not lose its owner
+		 * under its feet. Not a leftover. */
 	}
 
 	if (channel->state != SCCP_CHANNELSTATE_ONHOOK && channel->state != SCCP_CHANNELSTATE_DOWN) {
@@ -2505,6 +2571,10 @@ void sccp_channel_transfer(channelPtr channel, constDevicePtr device)
 	// if (d->transferChannels.transferee && !d->transferChannels.transferer) {
 	// sccp_channel_release(&d->transferChannels.transferee);						/* explicit release */
 	// }
+	/* review 2026-09: of the two mirror-image safeguards only this one (transferee set, no transferer)
+	 * was switched off, with the author's own doubt above. Nothing in the code proves the state cannot
+	 * occur; if it does, the transferee reference is overwritten by the retain below without a
+	 * release - a leaked channel reference. Left as found, flagged for the report. */
 	if (!d->transferChannels.transferee && d->transferChannels.transferer) {
 		sccp_channel_release(&d->transferChannels.transferer);						/* explicit release */
 	}
@@ -2544,6 +2614,14 @@ void sccp_channel_transfer(channelPtr channel, constDevicePtr device)
 				sccp_device_setLamp(d, SKINNY_STIMULUS_TRANSFER, instance, SKINNY_LAMP_FLASH);
 
 				/* set a var for BLINDTRANSFER. It will be removed if the user manually answers the call Otherwise it is a real BLINDTRANSFER */
+				/* review 2026-09: the '#if 0' arm set BLINDTRANSFER on BOTH ends (new channel and bridge
+				 * peer); e2b0d5f9 "Fix: channels being left behind after transfer (pickup etc) on
+				 * asterisk-12 and asterisk-13" switched to the '#else' arm, which sets it only on the new
+				 * channel and names channel->owner - writing the variable on the bridge peer pinned an
+				 * extra reference and channels were never cleaned up. Do not re-enable. Also: the local
+				 * 'blindTransfer' is 0 from its declaration and never assigned, so in both arms
+				 * 'blindTransfer ||' is a dead operand and the right-hand side is already true here (all
+				 * four pointers were checked by the enclosing if). */
 #if 0
 				if (blindTransfer || (sccp_channel_new && sccp_channel_new->owner && pbx_channel_owner && pbx_channel_bridgepeer)) {
 					//! \todo use pbx impl
@@ -2791,6 +2869,11 @@ void sccp_channel_transfer_complete(channelPtr sccp_destination_local_channel)
 		/* update ring-in channel directly */
 		iPbx.set_connected_line(sccp_destination_local_channel, orig_number, orig_name, connectedLineUpdateReason);
 #if ASTERISK_VERSION_GROUP > 106										/*! \todo change to SCCP_REASON Codes, using mapping table */
+		/* review 2026-09: the redirected-update for the DESTINATION is switched off while the one for the
+		 * source (above) is live. Note the arguments: they are the same calling and called values as for the
+		 * source, so this call would have told the transfer target its own data as the "redirecting"
+		 * party - i.e. it was disabled for sending the wrong parameters, not because the update itself
+		 * is unwanted. Re-enabling needs the right party data first. */
 //		if (iPbx.sendRedirectedUpdate) {
 //			iPbx.sendRedirectedUpdate(sccp_destination_local_channel, calling_number, calling_name, called_number, called_name, AST_REDIRECTING_REASON_UNCONDITIONAL);
 //		}

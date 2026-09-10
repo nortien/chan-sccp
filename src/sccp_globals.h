@@ -102,7 +102,7 @@ struct sccp_global_vars {
 #endif
 	boolean_t echocancel;											/*!< Echo Canel Support (Boolean, default=on) */
 	boolean_t silencesuppression;										/*!< Silence Suppression Support (Boolean, default=on)  */
-	boolean_t trustphoneip;											/*!< Trust Phone IP Support (Boolean, default=on) */
+	boolean_t trustphoneip;											/*!< Trust Phone IP Support (Boolean, default=on) */	/* review 2026-09: never assigned (option OBSOLETE, skipped by parser and defaults) yet printed by 'sccp show globals' as '(deprecated)'; NAT handling moved to sccp_nat_t nat */
 	boolean_t privacy;											/*!< Privacy Support (Length=2) */
 	boolean_t mwioncall;											/*!< MWI On Call Support (Boolean, default=on) */
 	boolean_t directrtp;											/*!< Direct RTP */

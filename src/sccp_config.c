@@ -400,6 +400,11 @@ static const SCCPConfigOption * sccp_find_config(const sccp_config_segment_t seg
 }
 
 /* Create new variable structure for Multi Entry Parameters */
+/* review 2026-09: the block-commented function below is the OLD implementation (strtok_r over the option
+ * name, one scan of cat_root per token); the live one follows it and makes a single pass over cat_root
+ * matching '|name|' with strcasestr. The point of the rewrite - never written down until now - is that
+ * the single pass preserves the order of the config lines, which disallow|allow depends on and which
+ * AST_TEST_DEFINE(sccp_config_multientry) checks. Kept as the reference for that change. */
 /*
 static PBX_VARIABLE_TYPE *createVariableSetForMultiEntryParameters(PBX_VARIABLE_TYPE * cat_root, const char *configOptionName, PBX_VARIABLE_TYPE * out)
 {
@@ -1183,6 +1188,9 @@ sccp_value_changed_t sccp_config_parse_privacyFeature(void * const dest, const s
  *
  * \note not multi_entry
  */
+/* review 2026-09: the block-commented parser below is superseded - mwilamp is TYPE_ENUM(skinny,lampmode)
+ * in all three segments of sccp_config_entries.hh and is handled by the generic
+ * SCCP_CONFIG_DATATYPE_ENUM path in sccp_config_object_setValue. The name appears in no table. */
 /*
    sccp_value_changed_t sccp_config_parse_mwilamp(void *const dest, const size_t size, PBX_VARIABLE_TYPE * v, const sccp_config_segment_t segment)
    {
@@ -1559,6 +1567,12 @@ sccp_value_changed_t sccp_config_parse_jbflags_impl(void * const dest, const siz
 
 /*!
  * \brief Config Converter/Parser for WebDir
+ *
+ * review 2026-09, unfinished feature: fully written and declared, but the only table row that called it
+ * (webdir in sccp_config_entries.hh) is commented out together with its CS_EXPERIMENTAL_XML guard, and
+ * the G_OBJ_REF(webdir) in that row would not compile - struct sccp_global_vars has no webdir member
+ * anywhere. The xslt-stylesheet directory for experimental-XML was abandoned halfway. Non-static, so
+ * -Wunused-function stays quiet.
  */
 sccp_value_changed_t sccp_config_parse_webdir(void * const dest, const size_t size, PBX_VARIABLE_TYPE * v, const sccp_config_segment_t segment)
 {
@@ -3118,7 +3132,7 @@ static const struct softkeyConfigurationTemplate {
 	{"endcall", 			SKINNY_LBL_ENDCALL},
 	{"idivert", 			SKINNY_LBL_IDIVERT},
 	{"resume", 			SKINNY_LBL_RESUME},
-	{"newcall", 			SKINNY_LBL_NEWCALL},
+	{"newcall", 			SKINNY_LBL_NEWCALL},	/* review 2026-09: duplicate of the "newcall" row above - sccp_config_getSoftkeyLbl returns on the first match, so this row can never be reached */
 	{"transfer", 			SKINNY_LBL_TRANSFER},
 	{"answer", 			SKINNY_LBL_ANSWER},
 	{"transvm", 			SKINNY_LBL_TRNSFVM},
@@ -3129,6 +3143,12 @@ static const struct softkeyConfigurationTemplate {
 	{"intrcpt", 			SKINNY_LBL_INTRCPT},
 	{"monitor", 			SKINNY_LBL_MONITOR},  
 	{"dial", 			SKINNY_LBL_DIAL},
+/* review 2026-09: this '#ifndef' drops callback/trnsfvm/cbarge from the label table exactly when
+ * --enable-advanced-functions is on - and unlike every neighbouring block (vidmode, pickup, park,
+ * select/dirtrfr, conf) it provides no '-1' stand-ins for that case, so sccp_config_getSoftkeyLbl
+ * returns SKINNY_LBL_EMPTY and sccp_config_readSoftKeySet inserts an EMPTY key instead of skipping
+ * the label. In the default build (flag off) the three labels are live. Looks like an inverted
+ * condition that never bit because nobody ships with the flag. */
 #ifndef CS_ADV_FEATURES
 	{"callback",			SKINNY_LBL_CALLBACK},
 	{"trnsfvm",			SKINNY_LBL_TRNSFVM},
@@ -3170,7 +3190,7 @@ static const struct softkeyConfigurationTemplate {
 	{"conflist", 			-1},
 #endif	
 	{"empty", 			SKINNY_LBL_EMPTY},
-//	{"info", 			SKINNY_LBL_INFO},
+//	{"info", 			SKINNY_LBL_INFO},	/* review 2026-09: an Info softkey was started and never wired - the label exists, no callback does */
 	/* clang-format on */
 
 };
@@ -3675,6 +3695,9 @@ static int _config_generate_wiki(char * filename)
 	struct ast_tm  tm;
 	struct timeval now = ast_tvnow();
 	ast_strftime(date, sizeof(date), "%b %e %T", ast_localtime(&now, &tm, NULL));
+	/* review 2026-09: date is computed and never printed - the four lines above were copied from
+	 * sccp_config_generate, where they feed a ';! Creation Date:' header; the wiki output has no such
+	 * header. Only cost is a spare ast_localtime call. */
 
 	fprintf(f, "*sccp.conf options*\n\n");
 	for (segment = SCCP_CONFIG_GLOBAL_SEGMENT; segment <= SCCP_CONFIG_SOFTKEY_SEGMENT; segment++) {
@@ -4055,6 +4078,10 @@ AST_TEST_DEFINE(sccp_config_tokenized_default)
 	return AST_TEST_PASS;
 }
 
+/* review 2026-09, unfinished tests: sccp_config_setValue and sccp_config_setDefault below are commented
+ * out with their AST_TEST_REGISTER/UNREGISTER lines. Neither body contains a single check - only a
+ * commented prototype of the function under test - so they were started and abandoned, not disabled
+ * for failing. All under CS_TEST_FRAMEWORK, off in every normal build. */
 /*
 AST_TEST_DEFINE(sccp_config_setValue)
 {

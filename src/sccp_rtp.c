@@ -167,6 +167,10 @@ boolean_t sccp_rtp_createServer(constDevicePtr d, channelPtr c, sccp_rtp_type_t 
 /*!
  * \brief request the port to be used for RTP, early on, so that we can use it during bridging, even before open_receive_ack has been received (directrtp)
  */
+/* review 2026-09, unfinished: complete (sends PortRequest, raises the video server) and never
+ * called in the repository's history - the early port request for directrtp was implemented and
+ * not connected to the bridging path. It is also the only caller of d->protocol->sendPortRequest,
+ * so that whole path is unreachable (the builder stays live through the protocol tables). */
 int sccp_rtp_requestRTPPorts(constDevicePtr device, channelPtr channel)
 {
 	pbx_assert(device != NULL && channel != NULL);
@@ -262,6 +266,9 @@ void sccp_rtp_appendState(rtpPtr rtp, sccp_rtp_dir_t dir, sccp_rtp_status_t stat
 	direction->_state |= state;
 }
 
+/* review 2026-09: no callers - born with getState/areBothInvalid/appendState/setState as a
+ * complete accessor set; clearing single state bits was never needed, setState(INACTIVE) sufficed.
+ * Symmetry, not lost functionality. */
 void sccp_rtp_subtractState(rtpPtr rtp, sccp_rtp_dir_t dir, sccp_rtp_status_t state)
 {
 	SCOPED_MUTEX(rtplock, (ast_mutex_t *)&rtp->lock);
@@ -370,6 +377,10 @@ void sccp_rtp_set_phone(constChannelPtr c, rtpPtr rtp, struct sockaddr_storage *
 			sccp_netsock_setPort(new_peer, port);
 		}
 
+		/* review 2026-09: the commented 'address unchanged - return early' shortcut below is off on
+		 * purpose (see the \todo): rtp_setPhoneAddress must be called every time so Asterisk re-binds the
+		 * stream on resume on the same phone. The equivalent shortcut in sccp_rtp_set_peer stays live -
+		 * intended asymmetry. */
 		/*! \todo if we enable this, we get an audio issue when resume on the same device, so we need to force asterisk to update -MC */
 		/*
 		if (sccp_netsock_equals(new_peer, &c->rtp.audio.phone)) {
@@ -427,6 +438,11 @@ int sccp_rtp_updateNatRemotePhone(constChannelPtr c, rtpPtr rtp)
 	return res;
 }
 
+/* review 2026-09: 'buflen' is never used - the body passes a hard 0 (no limit) to pbx_str_append, and
+ * the only caller (CLI_AMI_TABLE_BEFORE_ITERATION in sccp_cli.c) hands in DEFAULT_PBX_STR_BUFFERSIZE
+ * for nothing. Related: 'buf' is passed by value and '&buf' given to pbx_str_append - if the string
+ * ever had to grow, the caller would keep a stale pointer; safe today only because that caller uses
+ * pbx_str_alloca, which never reallocates. The honest signature is struct ast_str **buf. */
 void sccp_rtp_print(constChannelPtr c, sccp_rtp_type_t type, struct ast_str * buf, int buflen)
 {
 	pbx_assert(c && buf);
@@ -521,6 +537,8 @@ sccp_rtp_info_t sccp_rtp_getVideoPeerInfo(constChannelPtr c, sccp_rtp_t ** rtp)
 /*!
  * \brief Get Video Peer
  */
+/* review 2026-09: no callers, and additionally under CS_SCCP_VIDEO; see getAudioPeer below for the
+ * pair. */
 boolean_t sccp_rtp_getVideoPeer(constChannelPtr c, struct sockaddr_storage ** new_peer)
 {
 	sccp_rtp_t * video = (sccp_rtp_t *)&(c->rtp.video);
@@ -532,6 +550,9 @@ boolean_t sccp_rtp_getVideoPeer(constChannelPtr c, struct sockaddr_storage ** ne
 /*!
  * \brief Get Audio Peer
  */
+/* review 2026-09: no callers - not to be confused with the live sccp_rtp_getAudioPeerInfo (called
+ * by every astNNN.c). Info returns the directrtp flags, Peer the address; the wrappers read
+ * rtp->phone_remote directly, so this half of the pair was never needed. */
 boolean_t sccp_rtp_getAudioPeer(constChannelPtr c, struct sockaddr_storage ** new_peer)
 {
 	sccp_rtp_t * audio = (sccp_rtp_t *)&(c->rtp.audio);
@@ -559,7 +580,7 @@ boolean_t sccp_rtp_getUs(constRtpPtr rtp, struct sockaddr_storage * us)
 		iPbx.rtp_getUs(rtp->instance, us);
 		return TRUE;
 	}
-	// us = &rtp->phone_remote;
+	// us = &rtp->phone_remote;	/* review 2026-09: was dead even when live - 'us' is a by-value pointer parameter, assigning it changes a local copy; a fallback would need memcpy into *us. Without an instance the function now returns FALSE and leaves the caller's buffer alone */
 	return FALSE;
 }
 
@@ -589,6 +610,9 @@ boolean_t sccp_rtp_getPeer(constRtpPtr rtp, struct sockaddr_storage * them)
 /*!
  * \brief Get Sample Rate
  */
+/* review 2026-09: no callers - the sample-rate computation moved into the OpenMultiMediaChannel
+ * builders in sccp_protocol.c; this wrapper and the iPbx.rtp_get_sampleRate member it wraps
+ * (filled in every astNNN.c) are both unreachable. */
 int sccp_rtp_get_sampleRate(skinny_codec_t codec)
 {
 	if (iPbx.rtp_get_sampleRate) {

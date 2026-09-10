@@ -624,6 +624,10 @@ static int sccp_manager_line_fwd_update(struct mansession *s, const struct messa
 		return 0;
 	}
 
+	/* review 2026-09, dead check: astman_get_header() returns "" for a missing header, never NULL, so
+	 * this test, the '!Disable' one below, and the two '? :' forms in sccp_manager_startCall
+	 * (lineName, ids.uniqueid) can never take their NULL branch. The sccp_strlen_zero() test a few
+	 * lines down is the one that works. */
 	if (!forwardType) {
 		pbx_log(LOG_WARNING, "%s: Forwardtype is not optional [all | busy | noanswer]\n", deviceName);
 		astman_send_error(s, m, "Forwardtype is not optional [all | busy | noanswer]"); /* NoAnswer to be added later on */
@@ -1208,6 +1212,9 @@ boolean_t sccp_manager_action2str(const char *manager_command, char **outStr)
 */
 
 #if defined(CS_EXPERIMENTAL)
+/* review 2026-09, unfinished and never executed: exported and documented, called from nowhere, and
+ * compiled only under CS_EXPERIMENTAL. Proof it never ran: the sscanf inside passes token == NULL
+ * as the destination of %[ - it would crash on the first iteration. */
 char * sccp_manager_retrieve_parkedcalls_cxml(char ** out) 
 {
 	char *parkedcalls_messageStr = NULL;

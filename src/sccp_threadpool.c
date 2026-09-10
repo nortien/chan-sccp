@@ -17,10 +17,14 @@ SCCP_FILE_VERSION(__FILE__, "");
 #include "sccp_threadpool.h"
 #include <signal.h>
 #undef pthread_create
+/* review 2026-09: never active - configure checks sys/sysinfo.h and defines HAVE_SYS_SYSINFO_H;
+ * HAVE_SYS_INFO_H is defined by nothing and occurs only in these two lines. So get_nprocs_conf()
+ * is never consulted and the pool always starts with the caller's size (THREADPOOL_MIN_SIZE = 2).
+ * Fixing the name would change the pool size on every box - a decision, not a typo fix. */
 #if defined(__GNUC__) && __GNUC__ > 3 && defined(HAVE_SYS_INFO_H)
 #include <sys/sysinfo.h>											// to retrieve processor info
 #endif
-//#define SEMAPHORE_LOCKED	(0)
+//#define SEMAPHORE_LOCKED	(0)	/* review 2026-09: leftovers of the upstream thpool library's semaphore-guarded queue; the fork uses pbx_cond_t work/exit instead */
 //#define SEMAPHORE_UNLOCKED	(1)
 void sccp_threadpool_grow_locked(sccp_threadpool_t * tp_p, int amount);
 void sccp_threadpool_shrink_locked(sccp_threadpool_t * tp_p, int amount);

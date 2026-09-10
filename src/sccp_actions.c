@@ -209,6 +209,10 @@ static const struct messageMap_cb sccpMessagesCbMap[SCCP_MESSAGE_HIGH_BOUNDARY +
 
 static const struct messageMap_cb spcpMessagesCbMap[SPCP_MESSAGE_HIGH_BOUNDARY + 1- SPCP_MESSAGE_OFFSET] = {
 	[SPCPRegisterTokenRequest - SPCP_MESSAGE_OFFSET] = {handle_SPCPTokenReq, FALSE},
+	/* review 2026-09: UnknownVGMessage (0xFF00, from a VG224 analog gateway) is commented out here, in the
+	 * SPCP messageinfo table and in the wire struct itself (sccp_protocol.h) - consistently, because the
+	 * struct body was never written ('//struct { //} UnknownVGMessage;'), so a table entry could not do
+	 * anything. The right way to park an undecoded message; nothing to switch on. */
 	//[UnknownVGMessage - SPCP_MESSAGE_OFFSET] = {NULL, FALSE},
 };
 
@@ -452,6 +456,11 @@ void handle_XMLAlarmMessage(constSessionPtr s, devicePtr no_d, constMessagePtr m
 		}
 
 		/* We might want to capture this information for later use (For example in a VideoAdvantage like project) */
+		/* review 2026-09, unfinished: the CDP neighbour fields (the switch and port the phone is plugged
+		 * into) would be parsed by the block below, but nothing in the tree stores or exposes neighbour
+		 * data, so there is no consumer to connect it to. The sibling scans above (alarmName, DeviceName,
+		 * ReasonForOutOfService, LastProtocolEvent*) are live - this is an abandoned extension, not
+		 * scaffolding. The variables it would fill are declared under the same comment. */
 
 		/*
 		   if (sscanf(line, "<String name=\"NeighborIPv4Address\">%[^<]</String>", neighborIpv4Address) == 1) {
@@ -894,6 +903,11 @@ void handle_register(constSessionPtr s, devicePtr maybe_d, constMessagePtr msg_i
 	uint8_t protocolVer = protocolFeatures.protocolVersion;
 	//uint32_t maxConferences = letohl(msg_in->data.RegisterMessage.lel_maxConferences);
 	//uint32_t activeConferences = letohl(msg_in->data.RegisterMessage.lel_activeConferences);
+	/* review 2026-09, dead store: macAddress is filled from the wire and never read. It belongs to the
+	 * same set as the commented RegisterMessage field reads around it (maxStreams, activeStreams,
+	 * maxConferences, ipV4AddressScope, ...), all decoded for log lines that were switched off further
+	 * down; being a memcpy rather than an assignment it escaped -Wunused-but-set-variable and stayed
+	 * live. The device is identified by sId.deviceName throughout, never by this field. */
 	uint8_t macAddress[12];
 
 	memcpy(macAddress, msg_in->data.RegisterMessage.macAddress, 12);
@@ -1092,6 +1106,11 @@ void handle_register(constSessionPtr s, devicePtr maybe_d, constMessagePtr msg_i
 	return;
 
 FUNC_EXIT:
+/* review 2026-09, debug leftover disabled twice over: the refcount report on the register-failure
+ * path sits inside '#if CS_REFCOUNT_DEBUG' AND inside this block comment, so even a debug build does
+ * not compile it. The double disabling points at a problem in the block itself rather than the flag -
+ * it takes a pbx_str_t from pbx_str_create() and releases it with sccp_free() - the kind of thing one
+ * comments out in a hurry on an error path. Only runs when registration fails; nobody missed it. */
 /*
 #if CS_REFCOUNT_DEBUG
 	if (device) {
@@ -1137,6 +1156,11 @@ static btnlist *sccp_make_button_template(devicePtr d)
 		SCCP_LIST_TRAVERSE(&d->buttonconfig, buttonconfig, list) {
 			//sccp_log((DEBUGCAT_BUTTONTEMPLATE)) (VERBOSE_PREFIX_3 "\n%s: searching for position of button type %d\n", DEV_ID_LOG(d), buttonconfig->type);
 
+			/* review 2026-09, disabled wider skip: the live line skips a button that already has an
+			 * instance; the commented variant would also skip one marked for deletion by a pending
+			 * reload. As it stands a button sccp.conf no longer defines still lands in the template of
+			 * a device that re-registers before the reload completes - the button template and the
+			 * buttonconfig list are rebuilt at different times. Kept as the record of that gap. */
 			if (buttonconfig->instance > 0) {
 			//if (buttonconfig->instance > 0 || buttonconfig->pendingDelete) {
 				continue;
@@ -1445,6 +1469,10 @@ void sccp_handle_AvailableLines(constSessionPtr s, devicePtr d, constMessagePtr 
 	}
 
 	/* count the available lines on the phone */
+	/* review 2026-09, vestigial: line_count is computed and thrown away - the count now lives in
+	 * d->configurationStatistic.numberOfLines, which handle_offhook and others read. The locals i,
+	 * line_count, btn and the extra 'line_count = 0' above belong to this loop. The part of this
+	 * handler that still matters is the guard above (no template -> reset) and the flag below. */
 	for (i = 0; i < StationMaxButtonTemplateSize; i++) {
 		if ((btn[i].type == SKINNY_BUTTONTYPE_LINE) || (btn[i].type == SCCP_BUTTONTYPE_MULTI)) {
 			line_count++;
@@ -1474,6 +1502,9 @@ void handle_accessorystatus_message(constSessionPtr s, devicePtr d, constMessage
 	//	handle_offhook(s, d, msg_in);
 	//}
 	// use <alwaysUsePrimeLineVoiceMail>true</alwaysUsePrimeLineVoiceMail> in sep-file instead
+	/* review 2026-09: superseded, not merely disabled - the 6901 workaround moved out of the driver
+	 * into the phone's provisioning file, as the line above says. Keep the comment: it is the only
+	 * place that explains why a 6901 needs that sep-file setting. */
 }
 
 /*!
@@ -2178,6 +2209,11 @@ static void handle_stimulus_groupcallpickup(constDevicePtr d, constLinePtr l, co
 	sccp_log_and((DEBUGCAT_CORE + DEBUGCAT_ACTION)) (VERBOSE_PREFIX_3 "%s: Handle Group Call Pickup Stimulus\n", d->id);
 #ifdef CS_SCCP_PICKUP
 	/*! \todo use feature map or sccp_feat_handle_directed_pickup */
+	/* review 2026-09: the two commented alternatives in this handler (the directed-pickup call here,
+	 * the sccp_channel_newcall to a literal "pickupexten" below) are superseded by the live body
+	 * between them, which asks the PBX for the pickup extension via iPbx.getPickupExtension(). The
+	 * first is a refactoring note (the \todo above), the second dials an extension no dialplan has.
+	 * Group pickup works; nothing was lost. */
 	//sccp_feat_handle_directed_pickup(l, 1, d);
 	AUTO_RELEASE(sccp_channel_t, maybe_c , sccp_find_channel_by_lineInstance_and_callid(d, instance, callId));
 	AUTO_RELEASE(sccp_channel_t, channel , sccp_channel_getEmptyChannel(l, d, maybe_c, SKINNY_CALLTYPE_OUTBOUND, NULL, NULL));
@@ -2237,6 +2273,13 @@ static void handle_feature_action(constDevicePtr d, const int instance, const bo
 	}
 
 	/* notice: we use this function for request and changing status -> so just change state if toggleState==TRUE -MC */
+	/* review 2026-09: the toggleState==FALSE mode described above was never connected - the single
+	 * caller (handle_stimulus_feature) passes TRUE, so every 'if (TRUE == toggleState)' below is always
+	 * true. The status-request path went another way (handle_feature_stat_req -> sccp_feat_changed).
+	 * Not a defect, but the parameter is no longer documentation of a supported mode. The commented
+	 * status toggle inside the buttonconfig lookup loop further down is the older placement of the
+	 * same toggle - it moved into the per-feature cases (CFWDALL, DND) so that PRIVACY and MULTIBLINK,
+	 * which compute their own status, are not flipped as well. */
 	char featureOption[255] = "";
 
 	if (config->button.feature.options && !sccp_strlen_zero(config->button.feature.options)) {
@@ -2387,6 +2430,14 @@ static void handle_feature_action(constDevicePtr d, const int instance, const bo
 			break;
 
 		default:
+			/* review 2026-09, half-built features land here: MOBILITY, HUNT_GROUP_LOG_IN_OUT,
+			 * QUALITY_REPORT_TOOL, CALLBACK, OTHER_PICKUP, VIDEO_MODE, NEW_CALL and END_CALL are
+			 * parsed, placed in the button template and dispatched through the stimulus table, but
+			 * this switch implements only PRIVACY, CFWDALL, DND, MONITOR, DEVSTATE, PARKINGLOT and
+			 * MULTIBLINK - so a press of any other feature key logs this warning and redraws an
+			 * unchanged state (sccp_featureButton.c even keeps d->mobFeature.status for MOBILITY,
+			 * which nothing reads). The button pipeline covers the whole enum; the action side stopped
+			 * at seven cases. */
 			pbx_log(LOG_WARNING, "%s: unknown feature:%d\n", d->id, config->button.feature.id);
 			break;
 
@@ -2466,6 +2517,12 @@ static const struct _skinny_stimulusMap_cb {
 	[SKINNY_STIMULUS_GENERICAPPB5] 			= {NULL, FALSE},
 	[SKINNY_STIMULUS_MEETMECONFERENCE] 		= {NULL, FALSE},
 	[SKINNY_STIMULUS_CALLPICKUP] 			= {NULL, FALSE},
+	/* review 2026-09, the missing last hop of a finished feature: 'button = feature,,ConfList' parses
+	 * (sccp_enum.in), becomes SKINNY_BUTTONTYPE_CONF_LIST (sccp_featureButton.c), is placed in the
+	 * button template (above in this file) and the phone draws the key - but its press arrives as
+	 * StimulusMessage 0x83/0x84 and finds NULL here, so it only logs 'Not Handled'. The action
+	 * itself exists: sccp_feat_conflist() is reached from the CONFLIST *softkey*. Same for
+	 * REMOVE_LAST_PARTICIPANT. The other {NULL, FALSE} rows are stimuli the driver never handled. */
 	[SKINNY_STIMULUS_CONF_LIST] 			= {NULL, FALSE},
 	[SKINNY_STIMULUS_REMOVE_LAST_PARTICIPANT]	= {NULL, FALSE},
 	[SKINNY_STIMULUS_QUEUING] 			= {NULL, FALSE},
@@ -3013,6 +3070,11 @@ void handle_soft_key_set_req(constSessionPtr s, devicePtr d, constMessagePtr msg
 			if (b[c] == SKINNY_LBL_CALLBACK) {
 				continue;
 			}
+			/* review 2026-09, unreachable filter: SKINNY_LBL_CBARGE is not in softkeysmap[] - the array
+			 * is a full 32 entries and CBARGE is the commented 33rd (sccp_softkeys.c), because adding it
+			 * needs the declared size bumped in both sccp_softkeys.c and sccp_softkeys.h. Nothing in a
+			 * softkey set can therefore be CBARGE, in either build. See the note at the wire-index
+			 * translation in handle_soft_key_event for the whole cBarge story. */
 			if (b[c] == SKINNY_LBL_CBARGE) {
 				continue;
 			}
@@ -3165,6 +3227,10 @@ void handle_dialedphonebook_message(constSessionPtr s, devicePtr d, constMessage
 
 		/* take transactionID apart */
 		// only used in debug logging below
+		/* review 2026-09, debug leftover: the split of the 32-bit transaction id into a 28-bit index and
+		 * 4 spare bits was worked out while reverse-engineering CCM7 dumps; the driver echoes the id
+		 * back verbatim and never interprets it, so the decomposition and its log line stayed off.
+		 * The '// sccp_BFLState_t state;' further up is a remnant of the same investigation. */
 		// uint32_t tr_index = transactionID >> 4;								/* just 28 bits filled */
 		// uint32_t unknown1 = (transactionID | 0xFFFFFFF0) ^ 0xFFFFFFF0;					/* just 4 bits filled */
 		// sccp_log((DEBUGCAT_HINT + DEBUGCAT_ACTION)) (VERBOSE_PREFIX_3 "%s: Device sent Dialed PhoneBook Rec.'%u' (%u) dn '%s' (timer:0x%08X) line instance '%d'.\n", DEV_ID_LOG(d), tr_index, unknown1,
@@ -3447,6 +3513,13 @@ void handle_soft_key_event(constSessionPtr s, devicePtr d, constMessagePtr msg_i
 		return;
 	}
 	event = softkeysmap[event - 1];
+	/* review 2026-09, why cBarge can never be pressed: this line is the only route from a phone into the
+	 * softkey callback table, and it maps the wire index through softkeysmap[] - a full 32-entry array
+	 * whose commented 33rd entry is SKINNY_LBL_CBARGE (sccp_softkeys.c). The callback row
+	 * {SKINNY_LBL_CBARGE, sccp_sk_cbarge} exists, and behind it sccp_feat_handle_cbarge /
+	 * sccp_feat_cbarge are complete; the template request announces exactly these 32 labels, so the
+	 * phone cannot even draw the key. A feature rolled back when the fixed-size array ran out of room,
+	 * with the implementation, the callback registration and the CS_ADV_FEATURES filter left in place. */
 
 	/* correct events for nokia icc client (Legacy Support -FS) */
 	if(strcasecmp(d->config_type, "nokia-icc") == 0) {
@@ -3918,6 +3991,12 @@ void handle_mediaTransmissionFailure(constSessionPtr s, devicePtr d, constMessag
 	if ((GLOB(debug) & DEBUGCAT_MESSAGE) != 0) {									// the other dumps in this file are gated the same way
 		sccp_dump_msg(msg_in);
 	}
+	/* review 2026-09, unfinished and not revivable by uncommenting: the block below calls
+	 * d->protocol->parseMediaTransmissionFailure, a member sccp_deviceProtocol_t does not have (this
+	 * commented line is the only mention of that name in the tree). The receiving half IS built -
+	 * message id, wire struct, messageinfo and dispatch entries all exist - so a phone reporting a
+	 * broken media path is acknowledged and ignored, as the log line at the end admits. The
+	 * 'if directrtp: switch back to indirect rtp' inside is the design that was never written. */
 	/*
 
 	struct sockaddr_storage ss = { 0 };
@@ -4547,6 +4626,10 @@ void handle_updatecapabilities_message(constSessionPtr s, devicePtr d, constMess
 		uint8_t video_customPictureFormats = 0;
 		video_customPictureFormats = letohl(msg_in->data.UpdateCapabilitiesMessage.v3.lel_customPictureFormatCount);
 		/* the count is the phone's; the array is MAX_CUSTOM_PICTURES long */
+		/* review 2026-09: this loop is the inline original that handle_updatecapabilities_dissect_customPictureFormat()
+		 * was extracted from; the V2 and V3 handlers call the helper, this V1 handler kept its copy.
+		 * The copy had drifted (no bound on the count) until the bound above was added in this review;
+		 * the two now agree, but they are still two copies of one thing. */
 		for (video_customPictureFormat = 0; video_customPictureFormat < video_customPictureFormats && video_customPictureFormat < MAX_CUSTOM_PICTURES; video_customPictureFormat++) {
 			int width = letohl(msg_in->data.UpdateCapabilitiesMessage.v3.customPictureFormat[video_customPictureFormat].lel_width);
 			int height = letohl(msg_in->data.UpdateCapabilitiesMessage.v3.customPictureFormat[video_customPictureFormat].lel_height);

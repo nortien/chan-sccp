@@ -69,7 +69,7 @@ void sccp_dump_packet(const unsigned char * const messagebuffer, int len)
 	unsigned char * bufptr     = (unsigned char *)messagebuffer;
 
 	do {
-		// memset(hexout, 0, sizeof(hexout));
+		// memset(hexout, 0, sizeof(hexout));	/* review 2026-09: the //-leftovers in this file (this memset pair, the old AST_LIST_REMOVE_HEAD loop in sccp_addons_clear, the stringify dumps in apply_ha_default, the old __strcpy) are plain debug residue - the stringify dumps were commented precisely because two stringify calls in one format alias the shared thread-local buffer, the bug fixed in sccp_append_ha/sccp_print_ha */
 		memset(hexout, 0, (numcolumns * 3) + (numcolumns / 8) + 1);
 		// memset(chrout, 0, sizeof(chrout));
 		memset(chrout, 0, numcolumns + 1);
@@ -1629,6 +1629,11 @@ int sccp_retrieve_int_variable_byKey(PBX_VARIABLE_TYPE *params, const char *key)
 	return -1;
 }
 
+/* review 2026-09: no live caller under any flag - only mentioned inside the commented
+ * addTranslation() block of sccp_webservice.c (the unfinished web-page localisation). Also broken,
+ * which is probably why: in the else branch 'params = newvar' assigns a LOCAL copy of the
+ * parameter, the caller never gets the new list head, the pbx_variable_new memory leaks, and TRUE
+ * is returned. The signature would need PBX_VARIABLE_TYPE **params. */
 boolean_t sccp_append_variable(PBX_VARIABLE_TYPE *params, const char *key, const char *value)
 {
 	boolean_t res = FALSE;

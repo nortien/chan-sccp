@@ -19,6 +19,14 @@
 
 /* ------------------------------------------------------------------- */
 /*! ConfBridge announcer channel private. */
+/* review 2026-09: with its one own field commented out (and the matching ao2_cleanup pair in the
+ * destructor), announce_pvt is exactly ast_unreal_pvt and adds nothing. It stays only to satisfy
+ * the ast_unreal_alloc signature. Safe, but misleading: the announcer does NOT hold a reference to
+ * the bridge, whatever the field's comment suggests.
+ * Note on the library as a whole: it is built and linked for every Asterisk > 11 (extra.m4 tests
+ * the version, not the conference option), but its channel tech is registered only under
+ * CS_SCCP_CONFERENCE, which is off by default - so in a default build this whole file is
+ * compiled, linked and unreachable. Configuration, not rot. */
 struct announce_pvt {
 	/*! Unreal channel driver base class values. */
 	struct ast_unreal_pvt base;

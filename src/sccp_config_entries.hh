@@ -124,6 +124,12 @@ static const SCCPConfigOption sccpGlobalConfigOptions[]={
 #endif
 	{"callhistory_answered_elsewhere", G_OBJ_REF(callhistory_answered_elsewhere),TYPE_ENUM(skinny,callHistoryDisposition),					SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"Ignore",			"Where to store callinfo for calls answered on a remote device. Options: Ignore, Missed Calls (or Placed Calls, Received Calls which are less usefull)"},
 	{"amaflags", 			G_OBJ_REF(amaflags), 			TYPE_PARSER(sccp_config_parse_amaflags),					SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"default",			"Sets the default AMA flag code stored in the CDR record\n"},
+	/* review 2026-09: the OBSOLETE rows with '0, 0' for size/offset (this one, dtmfmode in [device],
+	 * callerid in [line]) address the first bytes of the owning struct. No write happens today only
+	 * because sccp_config_object_setValue returns early on OBSOLETE and set_defaults skips OBSOLETE;
+	 * the IGNORE rows (name/type/line) are NOT skipped by set_defaults and rely on a second early
+	 * return instead. Two "if it were not for" checks over the head of every object - any reordering
+	 * of those guards would corrupt memory silently. Candidate for a harmless offset or an IGNORE skip. */
 	{"protocolversion", 		0,				0,	TYPE_STRING,									SCCP_CONFIG_FLAG_OBSOLETE,					SCCP_CONFIG_NOUPDATENEEDED,		"20",				"(OBSOLETE) skinny version protocol.\n"},
 	{"callanswerorder", 		G_OBJ_REF(callanswerorder), 		TYPE_ENUM(sccp,call_answer_order),						SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"oldestfirst",			"oldestfirst or lastestfirst\n"},
 	{"regcontext", 			G_OBJ_REF(regcontext), 			TYPE_STRINGPTR,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"",				"SCCP Lines will we added to this context in asterisk for Dundi lookup purposes.\n"
@@ -180,6 +186,9 @@ static const SCCPConfigOption sccpGlobalConfigOptions[]={
 //#if defined(CS_EXPERIMENTAL_XML)
 //	{"webdir",			G_OBJ_REF(webdir),			TYPE_PARSER(sccp_config_parse_webdir),						SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"",				"Directory where xslt stylesheets can be found.\n"},
 //#endif
+	/* review 2026-09: the commented webdir row cannot be re-enabled as-is - struct sccp_global_vars has
+	 * no webdir member, so G_OBJ_REF(webdir) would not compile; the parser it names is complete and
+	 * orphaned (see sccp_config_parse_webdir). Unfinished experimental-XML feature. */
 };
 
 /*!
@@ -340,6 +349,13 @@ static const SCCPConfigOption sccpLineConfigOptions[] = {
 
 /*!
  * \brief List of SCCP Config Options for SCCP SoftKey
+ *
+ * review 2026-09: the S_OBJ_REF offsets in this table are dead data - the softkey segment never goes
+ * through the config engine (sccp_config_object_setValue / set_defaults are not called for it);
+ * softkeyset sections are parsed by hand in sccp_config_softKeySet against its own list of names.
+ * What this table IS used for: 'sccp config generate' and the AMI SCCPConfigMetaData output. The two
+ * name lists have already drifted: the parser accepts the aliases 'inusehint' and 'onhookstealable',
+ * this table does not list them.
  */
 static const SCCPConfigOption sccpSoftKeyConfigOptions[] = {
 	{ "type", 0, 0, TYPE_STRING, SCCP_CONFIG_FLAG_NONE, SCCP_CONFIG_NOUPDATENEEDED, "softkeyset", "This should be set to softkeyset" },

@@ -361,6 +361,10 @@ int sccp_pbx_call(channelPtr c, const char * dest, int timeout)
 					}
 				}
 				// snprintf(prompt, sizeof(prompt), "%s: %s: %s", active_channel->line->name, SKINNY_DISP_FROM, cid_num);
+				/* review 2026-09: the second-incoming-call prompt was switched to a device-level
+				 * sccp_dev_set_message (next live line) because a line prompt tied to the active call's
+				 * lineInstance/callid was overwritten by that call's own state on some phones. The 'prompt' buffer
+				 * it used no longer exists - uncommenting would not build. */
 				// sccp_dev_displayprompt(ld->device, activeChannelLinedevice->lineInstance, active_channel->callid, caller, SCCP_DISPLAYSTATUS_TIMEOUT);
 				sccp_dev_set_message(ld->device, caller, SCCP_DISPLAYSTATUS_TIMEOUT, FALSE, FALSE);
 			}
@@ -422,6 +426,9 @@ int sccp_pbx_call(channelPtr c, const char * dest, int timeout)
 	} else if(isBusy) {
 		iPbx.queue_control(c->owner, AST_CONTROL_BUSY);
 		// iPbx.set_callstate(c, AST_STATE_BUSY);
+		/* review 2026-09: the cause code changed from USER_BUSY to BUSY (live line below) and the forced
+		 * AST_STATE_BUSY was dropped - the core sets it after queue_control(AST_CONTROL_BUSY). The old
+		 * pair stays as the record of what changed. */
 		// pbx_channel_set_hangupcause(c->owner, AST_CAUSE_USER_BUSY);
 		pbx_channel_set_hangupcause(c->owner, AST_CAUSE_BUSY);
 		res = 0;
@@ -543,6 +550,11 @@ channelPtr sccp_pbx_hangup(constChannelPtr channel)
 	AUTO_RELEASE(sccp_device_t, d , sccp_channel_getDevice(c));
 	if(d && d->session) {
 		sccp_session_waitForPendingRequests(d->session);
+		/* review 2026-09, a user-visible option that does nothing: remotehangup_tone is parsed (default
+		 * "Zip", help "Passive hangup notification"), stored, printed by 'sccp show globals' - and the
+		 * only code that ever played it is this commented block, switched off by 6af99235 ("Mimimal
+		 * working version of sccp_channel_answer") during the answer rework and never restored.
+		 * Whether to bring it back is a product decision, not a cleanup. */
 		/*		if (
 					GLOB(remotehangup_tone) &&
 					SKINNY_DEVICE_RS_OK == sccp_device_getRegistrationState(d) &&
@@ -904,6 +916,10 @@ boolean_t sccp_pbx_channel_allocate(constChannelPtr channel, const void * ids, c
 	sccp_log((DEBUGCAT_PBX + DEBUGCAT_CHANNEL)) (VERBOSE_PREFIX_3 "SCCP: reduced audio prefs: %s\n", sccp_codec_multiple2str(s1, sizeof(s1) - 1, c->preferences.audio, SKINNY_MAX_CAPABILITIES));
 	sccp_log((DEBUGCAT_PBX + DEBUGCAT_CHANNEL)) (VERBOSE_PREFIX_3 "SCCP: combined video caps: %s\n", sccp_codec_multiple2str(s1, sizeof(s1) - 1, c->capabilities.video, SKINNY_MAX_CAPABILITIES));
 	sccp_log((DEBUGCAT_PBX + DEBUGCAT_CHANNEL)) (VERBOSE_PREFIX_3 "SCCP: reduced video prefs: %s\n", sccp_codec_multiple2str(s1, sizeof(s1) - 1, c->preferences.video, SKINNY_MAX_CAPABILITIES));
+	/* review 2026-09: the commented re-sort of preferences by remoteCapabilities below is complete and
+	 * symmetric (audio + video), which makes it look forgotten - it is not: the same logic runs inside
+	 * iPbx.alloc_pbxChannel, where the pbx channel already exists. Re-enabling it here would reduce
+	 * the codec sets twice. */
 /*
 	// this should not be done here at this moment, leaving it to alloc_pbxChannel to sort out.
 	if (c->calltype == SKINNY_CALLTYPE_INBOUND) {
@@ -1455,6 +1471,11 @@ EXIT_FUNC:
 	return NULL;
 }
 
+/* review 2026-09, unfinished: sccp_pbx_transfer below is under '#if 0', its '.transfer =
+ * sccp_pbx_transfer' row is commented out in all nine pbx_impl backends, and the prototype in
+ * sccp_pbx.h sits OUTSIDE the #if 0. Both branches only set res = -1; the real calls
+ * (sccp_blindxfer, which does not exist in the tree, and sccp_channel_transfer) are commented
+ * inside. A dialplan Transfer() on an SCCP channel falls back to the core. */
 #if 0
 /*!
  * \brief Handle Dialplan Transfer

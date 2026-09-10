@@ -1742,6 +1742,8 @@ static int sccp_show_channels(int fd, sccp_cli_totals_t *totals, struct mansessi
 		} else {                                                                                                                      \
 			snprintf(tmpname, sizeof(tmpname), "%s", channel->designator);                                                        \
 		}                                                                                                                             \
+		/* review 2026-09: always true - rtp is an embedded struct, not a pointer, so its address is never   \
+		 * NULL; a guard from when rtp was a pointer. -Waddress is not enabled, hence no warning. */         \
 		if(&channel->rtp) {                                                                                                           \
 			sccp_copy_string(addrStr, sccp_netsock_stringify(&channel->rtp.audio.phone), sizeof(addrStr));                        \
 		}                                                                                                                             \
@@ -1919,6 +1921,12 @@ CLI_AMI_ENTRY(show_hint_subscriptions, sccp_show_hint_subscriptions, "Show all S
 #undef CLI_COMMAND
 #endif														/* DOXYGEN_SHOULD_SKIP_THIS */
     /* -------------------------------------------------------------------------------------------------------TEST- */
+/* review 2026-09: the whole 'sccp test' command, and its AST_CLI_DEFINE row at the end of this file, exist
+ * only under CS_EXPERIMENTAL (--enable-experimental-mode, "only for developers", off by default) - not
+ * in any shipped build. Two things inside are worth knowing before anyone turns the flag on: the
+ * 'labels' branch builds a shell command from argv[4..6] with snprintf and runs it through system()
+ * (command injection by a CLI/AMI user), and the 'enum' branch walks all_entries to the end of the
+ * string and prints what is left - always empty, pure debug residue. */
 #ifdef CS_EXPERIMENTAL
 /*!
  * \brief Test Message
@@ -2617,7 +2625,7 @@ static int sccp_system_message(int fd, sccp_cli_totals_t *totals, struct mansess
 {
 	sccp_device_t *d = NULL;
 	int timeout = 0;
-	char timeoutStr[5] = "";
+	char timeoutStr[5] = "";	/* review 2026-09: filled by one snprintf below and never read - sccp_dev_set_message now takes the int timeout; the string form is what it used to take */
 	boolean_t beep = FALSE;
 	int local_line_total = 0;
 	int res = RESULT_FAILURE;

@@ -21,9 +21,9 @@ __BEGIN_C_EXTERN__
  */
 struct sccp_line {
 	//sccp_mutex_t lock;											/*!< Asterisk: Lock Me Up and Tie me Down */
-	char id[SCCP_MAX_LINE_ID];										/*!< This line's ID, used for login (for mobility) */
+	char id[SCCP_MAX_LINE_ID];										/*!< This line's ID, used for login (for mobility) */	/* review 2026-09: 'login for mobility' was never implemented - id is only a log prefix and the AMI ObjectId (and auto-numbered when unset); together with pin below it is the credential half of an Extension Mobility that has no middle */
 	char name[StationMaxNameSize];										/*!< The name of the line, so use in asterisk (i.e SCCP/[name]) */
-	uint32_t configurationStatus;										/*!< what is the current configuration status - @see sccp_config_status_t */
+	uint32_t configurationStatus;										/*!< what is the current configuration status - @see sccp_config_status_t */	/* review 2026-09: never written or read, and the sccp_config_status_t it refers to does not exist; pendingDelete/pendingUpdate below do the real job */
 #ifdef CS_SCCP_REALTIME
 	boolean_t realtime;											/*!< is it a realtimeconfiguration */
 	uint8_t _padding1[3];
@@ -33,7 +33,7 @@ struct sccp_line {
 		uint8_t numberOfActiveDevices;									/*!< Number of Active Devices */
 		uint8_t numberOfActiveChannels;									/*!< Number of Active Channels */
 		uint8_t numberOfHeldChannels;									/*!< Number of Hold Channels */
-		uint8_t numberOfDNDDevices;									/*!< Number of DND Devices */
+		uint8_t numberOfDNDDevices;									/*!< Number of DND Devices */	/* review 2026-09: never incremented or decremented; its only consumer, a CLI output line, is commented out - the one of the four line counters that was never implemented */
 	} statistic;												/*!< Statistics for Line Structure */
 
 	uint8_t incominglimit;											/*!< max incoming calls limit */
@@ -69,7 +69,7 @@ struct sccp_line {
 	SCCP_LIST_HEAD(, sccp_linedevice_t) devices;                                                            /*!< The device this line is currently registered to. */
 
 	PBX_VARIABLE_TYPE *variables;										/*!< Channel variables to set */
-	char pin[SCCP_MAX_LINE_PIN];										/*!< PIN number for mobility/roaming. */
+	char pin[SCCP_MAX_LINE_PIN];										/*!< PIN number for mobility/roaming. */	/* review 2026-09: parsed and printed by the CLI, compared with nothing (see id above) */
 	char *adhocNumber;											/*!< number that should be dialed when device offhocks this line */
 	char *regexten;												/*!< Extension for auto-extension (DUNDI) */
 	char *regcontext;											/*!< Context for auto-extension (DUNDI) */

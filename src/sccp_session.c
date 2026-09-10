@@ -45,6 +45,8 @@ SCCP_FILE_VERSION(__FILE__, "");
 /* global variables -> GLOBALS */
 // static pthread_t accept_tid;
 // static int accept_sock = -1;
+/* review 2026-09: both moved into struct sccp_servercontext (accept_tid and sc); the doxygen of
+ * bind_and_listen further down still calls them "static global variable (see at top)" - no longer true. */
 
 #define WRITE_BACKOFF 500											/* backoff time in millisecs, doubled every write retry (150+300+600+1200+2400+4800 = 9450 millisecs = 9.5 sec) */
 #define SESSION_DEVICE_CLEANUP_TIME 10										/* wait time before destroying a device on thread exit */
@@ -74,7 +76,7 @@ struct sccp_servercontext {
 	pthread_t accept_tid;
 	sccp_socket_connection_t sc;
 	boolean_t (*bind_and_listen)(sccp_servercontext_t * context, struct sockaddr_storage * bindaddr);
-	int (*stopListening)(sccp_servercontext_t * context);
+	int (*stopListening)(sccp_servercontext_t * context);	/* review 2026-09: assigned, never called through the pointer - all callers use sccp_servercontext_stopListening by name; only bind_and_listen is really dispatched */
 };
 
 sccp_servercontext_t * sccp_servercontext_create(struct sockaddr_storage * bindaddr, sccp_servercontexttype_t type)
@@ -173,6 +175,9 @@ struct sccp_session {
 														     pthread_join(), which is unusable once the thread is detached. */
 };														/*!< SCCP Session Structure */
 
+/* review 2026-09: getFD/setFD/getSSL/setSSL have no callers - fd and ssl moved into
+ * sccp_socket_connection_t and this file reads s->sc.fd / s->sc.ssl directly (without the session
+ * lock these accessors take, so the intended lock discipline was never established). */
 int sccp_session_getFD(sccp_session_t * s)
 {
 	// SCOPED_MUTEX
@@ -299,6 +304,8 @@ int sccp_session_waitForPendingRequests(sccp_session_t * s)
 	return 0;
 }
 
+/* review 2026-09: no callers - the read-only half of waitForPendingRequests (which is live);
+ * requestsInFlight is read directly where needed (wait, CLI table). */
 uint16_t sccp_session_getPendingRequests(sccp_session_t * s)
 {
 	SCOPED_SESSION(s);
@@ -393,6 +400,8 @@ static gcc_inline int session_buffer2msg(sccp_session_t * s, const unsigned char
 	if (dont_expect(lenAccordingToPacketHeader > lenAccordingToOurProtocolSpec)) {					// show out discarded bytes
 		pbx_log(LOG_WARNING, "%s: (session_dissect_msg) Incoming message is bigger(%d) than known size(%d). Packet looks like!\n", DEV_ID_LOG(s->device), lenAccordingToPacketHeader, lenAccordingToOurProtocolSpec);
 		// buffer[lenAccordingToPacketHeader + 1] = '\0';								// terminate buffer
+		/* review 2026-09: rightly off - buffer is const (the write is impossible by type) and the index
+		 * is one past the end anyway; the dump below takes the length explicitly and needs no terminator. */
 		sccp_dump_packet(buffer, lenAccordingToPacketHeader);
 	}
 	
@@ -783,7 +792,7 @@ gcc_inline void recalc_wait_time(sccp_session_t *s)
 		       s->keepAlive = derived;
 	       }
        }
-       //s->keepAliveInterval = (uint16_t)(keepAliveInterval * KEEPALIVE_ADDITIONAL_PERCENT_SESSION);
+       //s->keepAliveInterval = (uint16_t)(keepAliveInterval * KEEPALIVE_ADDITIONAL_PERCENT_SESSION);	/* review 2026-09: off on purpose - the percentage margin stays on s->keepAlive only; padding the poll interval as well made poll wake less often than the phone reports. The fork's own margin logic sits just above */
        s->keepAliveInterval = (uint16_t)keepAliveInterval;
 
 	sccp_log((DEBUGCAT_SOCKET)) (VERBOSE_PREFIX_4 "%s: keepalive:%d, keepaliveinterval:%d\n", s->designator, s->keepAlive, s->keepAliveInterval);
@@ -1021,7 +1030,7 @@ static boolean_t sccp_session_new_socket_allowed(struct sockaddr_storage *sin)
 		} else {
 			pbx_log(LOG_ERROR, SS_Memory_Allocation_Error, "SCCP");
 		}
-		//sccp_session_reject(s, "Device ip not authorized");
+		//sccp_session_reject(s, "Device ip not authorized");	/* review 2026-09: cannot be enabled here - at ACL time in accept_thread no session object exists yet (sccp_create_session runs later), so there is nothing to send a RegisterReject through; the refusal is a silent socket close */
 		return FALSE;
 	}
 	sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "SCCP: Accepted Client Connection from %s\n", addrStr);
@@ -1202,7 +1211,7 @@ void sccp_session_stop_accept_thread(sccp_servercontext_t * context)
 boolean_t sccp_session_bind_and_listen(sccp_servercontext_t * context, struct sockaddr_storage * bindaddr)
 {
 	int result = FALSE;
-	// static struct sockaddr_storage boundaddr = {0};
+	// static struct sockaddr_storage boundaddr = {0};	/* review 2026-09: the address-change test moved to sccp_servercontext_reload with boundaddr as a context field; this commented static is the old copy */
 	int port = -1;												/* was static, shared between the TCP and TLS contexts for no reason */
 	char addrStr[INET6_ADDRSTRLEN];
 	sccp_copy_string(addrStr, sccp_netsock_stringify_addr(bindaddr), sizeof(addrStr));
@@ -1307,7 +1316,7 @@ void sccp_session_sendmsg(const sccp_device_t * device, sccp_mid_t t)
  */
 int sccp_session_send(constDevicePtr device, const sccp_msg_t * msg_in)
 {
-	//const sccp_session_t * const s = sccp_session_findByDevice(device);
+	//const sccp_session_t * const s = sccp_session_findByDevice(device);	/* review 2026-09: no such function exists any more; the session comes straight from device->session (next lines) - there is no global session lookup to search */
 	sccp_msg_t *msg = (sccp_msg_t *) msg_in;				/* discard const * const */
 	const sccp_session_t * const s = device && device->session ? device->session : NULL;
 

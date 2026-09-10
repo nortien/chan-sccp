@@ -112,6 +112,10 @@ void sccp_devstate_module_stop(void)
 	SCCP_LIST_HEAD_DESTROY(&deviceStates);
 }
 
+/* review 2026-09, debug leftover: printStates and both of its calls (inside and after parseButtonArgs)
+ * were commented out together; it only logs the parsed states. The commented dump at the end of
+ * sccp_devstate_getNextDeviceState is of the same kind - and carries a typo ('*(int)nextstate'), so
+ * it was never switched back on either. */
 /*
 static void printStates(feature_state_t * states)
 {

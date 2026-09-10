@@ -156,6 +156,11 @@ gcc_inline const char *extensionstatus2str(uint32_t value)
 }
 #endif
 
+/* review 2026-09: UNUSEDCODE is never defined (see chan_sccp.c), so this block - like the eight other
+ * '#if UNUSEDCODE' blocks in this file - is a permanent '#if 0'. It has also rotted past compiling:
+ * the initialisers below carry a stray ',,' after the cause, and further down a previous function's
+ * name is glued to the next one's return type ('pbx_channel_walk_lockedstruct ast_ha *...'). Not
+ * revivable as it stands; the cause handling that replaced it lives in the astNNN.c wrappers. */
 #if UNUSEDCODE // 2015-11-01
 /*!
  * \brief Ast Cause - Skinny DISP Mapping
@@ -355,6 +360,10 @@ struct ast_config *pbx_config_load(const char *filename, const char *who_asked, 
  * \note replacement for ast_pbx_inet_ntoa
  * \param ia In Address / Source Address
  * \return Address as char
+ *
+ * review 2026-09: no callers anywhere in the tree. A sockaddr_in-era helper, displaced when the
+ * driver moved to sockaddr_storage and sccp_netsock_stringify*(); being non-static it never
+ * tripped -Wunused-function, which is how it survived.
  */
 const char *pbx_inet_ntoa(struct in_addr ia)
 {
@@ -550,6 +559,11 @@ pbx_format_enum_type __CONST__ skinny_codec2pbx_codec(skinny_codec_t codec)
  * \param codecs Array of Skinny Codecs
  *
  * \return bit array fmt/Format of ast_format_type (int)
+ *
+ * review 2026-09: compiled into every build (this file is common) but only called from
+ * ast106/ast108/ast110/ast111/ast112 - format bit-fields went away with Asterisk 13's struct
+ * ast_format_cap, and ast113..ast123 use ast_format_cap_* instead. Reachable only for those old
+ * wrappers; a commented-out copy of its prototype also sits in ast.h.
  */
 pbx_format_type __PURE__ skinny_codecs2pbx_codecs(const skinny_codec_t * const codecs)
 {
@@ -585,6 +599,11 @@ sccp_channel_t *get_sccp_channel_from_pbx_channel(const PBX_CHANNEL_TYPE * pbx_c
 	}
 }
 
+/* review 2026-09, debug leftover: the whole function and its one call site (in the hangup-type
+ * decision below) sit in block comments. It dumps the channel state that decides how a hangup is
+ * done (ZOMBIE / BLOCKING / pbx_check_hangup_locked / isRunningPbxThread / is_bridged) plus, under
+ * CS_REFCOUNT_DEBUG, the device refcount report - switched on while chasing ast_hangup races,
+ * switched off in place. Being commented rather than static keeps -Wunused-function quiet. */
 /*
 static void log_hangup_info(const char * hanguptype, constChannelPtr c, PBX_CHANNEL_TYPE * const pbx_channel)
 {

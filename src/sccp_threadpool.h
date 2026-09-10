@@ -113,7 +113,7 @@ SCCP_API int __PURE__ SCCP_CALL sccp_threadpool_thread_count(sccp_threadpool_t *
  * \return 0 on success,
  *        -1 on memory allocation error
  */
-SCCP_API int SCCP_CALL sccp_threadpool_jobqueue_init(sccp_threadpool_t * tp_p);
+SCCP_API int SCCP_CALL sccp_threadpool_jobqueue_init(sccp_threadpool_t * tp_p);	/* review 2026-09: declared, defined nowhere (upstream thpool leftover); the queue is initialised inline in sccp_threadpool_init. Calling it would fail to link */
 
 /*!
  * \brief Add job to queue

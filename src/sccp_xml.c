@@ -99,6 +99,11 @@ static __attribute__((malloc)) char * dump(xmlDoc * const doc, boolean_t indent)
 }
 
 #	if defined(HAVE_LIBXSLT) && defined(HAVE_LIBEXSLT_EXSLT_H)
+/* review 2026-09: the commented block below is a stale duplicate of sccp_webservice.c - the live
+ * searchWebDirForFile there builds PBX_VARLIB "/sccpxslt/<name>2<fmt>.<ext>", this old one had no
+ * sccpxslt directory and used strdup instead of pbx_strdup. Its outputfmt_ext[] table has six
+ * entries while the live outputfmt2contenttype[] also knows XHTML and JSON, so uncommenting would
+ * leave holes in the designated initialiser. */
 /*
 static const char * const outputfmt_ext[] = {
 	[SCCP_XML_OUTPUTFMT_NULL] = "",

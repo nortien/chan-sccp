@@ -162,6 +162,12 @@ static void sccp_device_setBackgroundImage(constDevicePtr device, const char *ur
 	sccp_log(DEBUGCAT_CORE)(VERBOSE_PREFIX_3 "%s: set background:%s via transaction:%d\n", device->id, url, transactionID);
 }
 
+/* review 2026-09, unfinished: displayBackgroundImagePreview is declared in sccp_device.h, implemented here
+ * (with this NotSupported stub), and assigned in the per-model method table in six places - and not
+ * one '->displayBackgroundImagePreview(' exists in the tree. Its table neighbours setBackgroundImage
+ * and setRingTone are called from postregistration and the CLI; preview has neither a config field
+ * nor a CLI subcommand. The model matrix was filled in (7941/42/45, 7961/62/65, 7970/71/75, IP
+ * Communicator, 8941/45) and the work stopped at "who calls it". */
 static void sccp_device_displayBackgroundImagePreviewNotSupported(constDevicePtr device, const char *url)
 {
 	sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: does not support Background Image\n", device->id);
@@ -182,6 +188,10 @@ static void sccp_device_displayBackgroundImagePreview(constDevicePtr device, con
 	sccp_log(DEBUGCAT_CORE)(VERBOSE_PREFIX_3 "%s: display background:%s via transaction:%d\n", device->id, url, transactionID);
 }
 
+/* review 2026-09, a request without a reader: sends <getDeviceCaps> to the phone (reachable only
+ * from the CLI branch marked WIP), and the DeviceToUser handler for APPID_DEVICECAPABILITIES
+ * merely logs the reply - nothing reaches d->capabilities. Live through the method table, useless
+ * in practice; finishing it means parsing the XML answer. */
 static void sccp_device_retrieveDeviceCapabilities(constDevicePtr device)
 {
 	char *xmlStr = "<getDeviceCaps></getDeviceCaps>";
@@ -298,6 +308,10 @@ static void sccp_device_copyStr2Locale_Convert(constDevicePtr d, char *dst, ICON
 }
 #endif
 
+/* review 2026-09, unfinished feature, not debug: sccp_device_startStream would push a <startMedia>
+ * XML to the phone to play a stream via UserToDevice. APPID_STREAM (9088) in sccp_protocol.h exists
+ * only for it - its single mention is inside this comment. The draft shows how far it got: volume and
+ * port are hard-coded, the port parameter is unused, the onStopped URL is commented a second time. */
 /*
    static void sccp_device_startStream(const sccp_device_t *device, const char *address, uint32_t port){
    pbx_str_t *xmlStr = pbx_str_alloca(DEFAULT_PBX_STR_BUFFERSIZE);
@@ -687,6 +701,10 @@ devicePtr sccp_device_create(const char * id)
 	memset(&d->softKeyConfiguration.activeMask, 0xFF, sizeof d->softKeyConfiguration.activeMask);
 	memset(d->call_statistics, 0, ((sizeof *d->call_statistics) * 2));
 
+/* review 2026-09: cannot be uncommented - no global SoftKeyModes exists anywhere in the tree
+ * (these two lines are its only mention). The assignment moved to the softkey template request
+ * (sccp_actions.c) and sccp_softkeys.c; the consumer checks modes/size for NULL, so the missing
+ * early init breaks nothing. */
 //	d->softKeyConfiguration.modes = (softkey_modes *) SoftKeyModes;
 //	d->softKeyConfiguration.size = ARRAY_LEN(SoftKeyModes);
 	sccp_device_setDeviceState(d, SCCP_DEVICESTATE_ONHOOK);
@@ -717,6 +735,11 @@ devicePtr sccp_device_create(const char * id)
 #endif
 
 	// /* disable videomode and join softkey for all softkeysets */
+	/* review 2026-09: switched off for its side effect, and both keys are now handled later and
+	 * selectively - VIDEO_MODE is enabled only for video-capable models under CS_SCCP_VIDEO (7985,
+	 * 8941/8945 in the model table below), JOIN is toggled in sccp_dev_set_keyset together with
+	 * CONFRN/CONFLIST. A blanket disable here would fight both. The doubled prefix (a line comment in
+	 * front of the block comment) is the trace of it being switched off twice. */
 	/*
 	for (i = 0; i < KEYMODE_ONHOOKSTEALABLE; i++) {
 		sccp_softkey_setSoftkeyState(d, i, SKINNY_LBL_VIDEO_MODE, FALSE);
@@ -1251,6 +1274,9 @@ uint8_t sccp_dev_build_buttontemplate(devicePtr d, btnlist * btn)
 			for (i = 0; i < 10; i++) {								// 4 visible, 6 in dropdown
 				btn[btn_index++].type = SCCP_BUTTONTYPE_MULTI;
 			}
+			/* review 2026-09: the commented loop is the previous layout of the 8941/8945 - buttons 5..10
+			 * fixed as SPEEDDIAL - replaced by the ten MULTI buttons above ('4 visible, 6 in dropdown').
+			 * Kept as the note of what the hardware's dropdown positions were once used for. */
 			/*
 			for (i = 5; i <= 10; i++) {
 				btn[btn_index++].type = SCCP_BUTTONTYPE_SPEEDDIAL;
@@ -1301,6 +1327,13 @@ uint8_t sccp_dev_build_buttontemplate(devicePtr d, btnlist * btn)
 		case SKINNY_DEVICETYPE_CISCO6901:
 			d->useHookFlash = sccp_device_trueResult;
 			d->hasLabelLimitedDisplayPrompt = sccp_device_trueResult;
+			/* review 2026-09, the 69xx cluster of commented lines (dndmode = REJECT, hasDisplayPrompt =
+			 * falseResult, and the CONFERENCE/HOLD/TRANSFER buttons of the 6921): switched off because the
+			 * hardware assumption was wrong. The 69xx DO have a display prompt, only a limited one - hence
+			 * hasLabelLimitedDisplayPrompt in the live lines; forcing hasDisplayPrompt off would silence
+			 * clearprompt/displayprompt and leave the phone without its status line. The dndmode override
+			 * survives only where it is needed (8941/8945); the 6921 buttons were replaced by the SPEEDDIAL
+			 * loop. */
 			//d->dndmode = SCCP_DNDMODE_REJECT;
 			//d->hasDisplayPrompt = sccp_device_falseResult;
 			btn[btn_index++].type = SCCP_BUTTONTYPE_MULTI;
@@ -1889,6 +1922,11 @@ void sccp_dev_displayprompt_debug(constDevicePtr d, const uint8_t lineInstance, 
  * \note: message is not known by all devices, we should figure out which do and which don't, for now, we are not using this message anymore
  * JVM: Startup Module Loader|cip.sccp.CcApi:? - alarm( GENERAL_ALARM ):Invalid SCCP message! : ID :9a: MessageFactory.createMessage failed, length = 0 - close connection and alarm in future 
  */
+/* review 2026-09: an exported function whose whole body is commented out, with zero callers; the
+ * reason is the firmware alarm quoted above (the phone does not know ClearDisplay 0x9a and drops
+ * the connection). The prototype in sccp_device.h still promises it, so a new caller would get a
+ * silent no-op instead of a link error. Either drop the prototype or gate the message by protocol
+ * version before using it. */
 void sccp_dev_cleardisplay(constDevicePtr d)
 {
 	//if (!d || !d->session || !d->protocol || (!d->hasDisplayPrompt() && !d->hasLabelLimitedDisplayPrompt())) {
@@ -1898,6 +1936,11 @@ void sccp_dev_cleardisplay(constDevicePtr d)
 	//sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: Clear the display\n", d->id);
 }
 
+/* review 2026-09: UNUSEDCODE is never defined (see chan_sccp.c), so sccp_dev_display_debug below
+ * is a permanent '#if 0'; it has not compiled since 2015 - two consecutive 'if (...) {' share one
+ * closing brace. Note the trap in sccp_device.h: the prototype is declared unconditionally while
+ * the sccp_dev_display() macro sits under the same guard, i.e. the header promises a symbol the
+ * object file does not contain. */
 #if UNUSEDCODE // 2015-11-01
 /*!
  * \brief Send Display to Device
@@ -3026,6 +3069,13 @@ static void sccp_device_indicate_onhook(constDevicePtr device, const uint8_t lin
 	sccp_dev_set_ringer(device, SKINNY_RINGTYPE_OFF, SKINNY_RINGDURATION_NORMAL, lineInstance, callid);
 }
 /* currently unused and out of sync with sccp_indications.c */
+/* review 2026-09: registered as .offhook in BOTH indication tables, declared in sccp_device.h, and
+ * d->indicate->offhook is called from nowhere - the OFFHOOK state is handled inline in the switch of
+ * sccp_indicate.c ('should use d->indicate->offhook instead', it says). The same shape as the
+ * remoteOffhook case fixed earlier, but this one cannot just be wired up: the two versions differ.
+ * This one checks dnd/monitor and sends CALLREMOTEMULTILINE instead of OFFHOOK but lights no line
+ * lamp and gives no stutter tone for phones without an MWI lamp; the inline one does the opposite.
+ * Merge first, then connect - otherwise ATAs lose their voicemail indication. */
 static void sccp_device_indicate_offhook(constDevicePtr device, sccp_linedevice_t * ld, uint32_t callid)
 {
 	sccp_dev_set_speaker(device, SKINNY_STATIONSPEAKER_ON);

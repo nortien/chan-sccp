@@ -375,6 +375,9 @@ typedef enum {
 	SPCPRegisterTokenAck = 0x8100,
 	SPCPRegisterTokenReject = 0x8101,
 
+	/* review 2026-09: UnknownVGMessage is parked consistently - here, as the SPCP high boundary, in
+	 * the SPCP dispatch table (sccp_actions.c) and as the wire struct further down - because the
+	 * message from the VG224 gateway was never decoded (the struct body is empty). Nothing to enable. */
 	//UnknownVGMessage				= 0xFF00,	/* Unknown Message (VG224). Reported by Ahmet Zaim */
 //#define SPCP_MESSAGE_HIGH_BOUNDARY			UnknownVGMessage		/*0xFF00*/
 #define SPCP_MESSAGE_HIGH_BOUNDARY			SPCPRegisterTokenReject

@@ -174,14 +174,14 @@ struct sccp_device {
 	int32_t tz_offset;											/*!< Timezone OffSet */
 	uint8_t linesCount;											/*!< Number of Lines */
 	uint8_t defaultLineInstance;										/*!< Default Line Instance */
-	uint8_t maxstreams;											/*!< Maximum number of Stream supported by the device */
+	uint8_t maxstreams;											/*!< Maximum number of Stream supported by the device */	/* review 2026-09: never written or read; the phone's lel_maxStreams is parsed by a commented line in handle_register, so the stream limit the device reports is ignored */
 	uint8_t _padding1;
 	struct {
 		char number[SCCP_MAX_EXTENSION];
 		uint16_t lineInstance;
 	} redialInformation;											/*!< Last Dialed Number */
 	boolean_t linesRegistered;										/*!< did we answer the RegisterAvailableLinesMessage */
-	boolean_t meetme;											/*!< Meetme on/off */
+	boolean_t meetme;											/*!< Meetme on/off */	/* review 2026-09: written by the live 'meetme' device option (NEEDDEVICERESET!) and read by nobody - the MEETME softkey gate looks only at l->meetme; meetme=off on a device restarts the phone for no effect */
 	boolean_t softkeysupport;										/*!< Soft Key Support (Boolean, default=on) */
 	boolean_t realtime;											/*!< is it a realtime configuration */
 	boolean_t transfer;											/*!< Transfer Support (Boolean, default=on) */
@@ -236,7 +236,7 @@ struct sccp_device {
 	sccp_featureConfiguration_t monitorFeature;								/*!< Monitor (automon) Feature */
 	sccp_featureConfiguration_t dndFeature;									/*!< dnd Feature */
 	sccp_featureConfiguration_t priFeature;									/*!< priority Feature */
-	sccp_featureConfiguration_t mobFeature;									/*!< priority Feature */
+	sccp_featureConfiguration_t mobFeature;									/*!< priority Feature */	/* review 2026-09: only read (sccp_featureButton.c), never written - the feature=mobility button is half-built, its press lands in 'unknown feature'; the doxygen text was copied from priFeature */
 
 	uint8_t audio_tos;											/*!< audio stream type_of_service (TOS) (RTP) */
 	uint8_t video_tos;											/*!< video stream type_of_service (TOS) (VRTP) */
@@ -254,8 +254,8 @@ struct sccp_device {
 		sccp_tokenstate_t token;									/*!< token request state */
 	} status;												/*!< Status Structure */
 	boolean_t allowRinginNotification;									/*!< allow ringin notification for hinted extensions (Boolean, default=on) */
-	boolean_t trustphoneip;											/*!< Trust Phone IP Support (Boolean, default=off) DEPRECATED */
-	boolean_t needcheckringback;										/*!< Need to Check Ring Back Support (Boolean, default=on) */
+	boolean_t trustphoneip;											/*!< Trust Phone IP Support (Boolean, default=off) DEPRECATED */	/* review 2026-09: never assigned - the option is OBSOLETE in both segments, so neither parser nor defaults touch it; CLI still prints it as '(deprecated)'. NAT decisions use d->nat */
+	boolean_t needcheckringback;										/*!< Need to Check Ring Back Support (Boolean, default=on) */	/* review 2026-09: this declaration is the only mention of the name in the whole repository - no parser, no write, no read */
 	boolean_t isAnonymous;											/*!< Device is connected Anonymously (Guest) */
 
 	btnlist *buttonTemplate;										/*!< Button Template for this device type */
@@ -307,14 +307,14 @@ struct sccp_device {
 	boolean_t conf_show_conflist;										/*!< Automatically show conference list to the moderator */
 #endif
 #ifdef CS_SCCP_PICKUP
-	boolean_t directed_pickup;										/*!< Directed Pickup Extension Support (Boolean, default=on) */
+	boolean_t directed_pickup;										/*!< Directed Pickup Extension Support (Boolean, default=on) */	/* review 2026-09: the three device-level pickup fields (directed_pickup, _context, pickup_modeanswer) are written by OBSOLETE options and read by nobody - the line-level fields are the ones consulted */
 	char directed_pickup_context[SCCP_MAX_CONTEXT];								/*!< Directed Pickup Context to Use in DialPlan */
 	boolean_t pickup_modeanswer;										/*!< Directed Pickup Mode Answer (Boolean, default on). Answer on directed pickup */
 #endif
 	skinny_callHistoryDisposition_t callhistory_answered_elsewhere;						/*!< What to do with the call history for calls that were answered remotely */
 	boolean_t useRedialMenu;
 	
-	uint32_t  rtpPort;
+	uint32_t  rtpPort;	/* review 2026-09: write-only - filled from IpPortMessage and read by nothing but the log line next to it; media takes address and port from OpenReceiveChannelAck */
 #ifdef CS_AST_HAS_STASIS_ENDPOINT
 	PBX_ENDPOINT_TYPE *endpoint;
 #endif
@@ -403,7 +403,7 @@ SCCP_API uint8_t SCCP_CALL sccp_dev_build_buttontemplate(devicePtr d, btnlist * 
 SCCP_API void SCCP_CALL sccp_dev_sendmsg(constDevicePtr d, sccp_mid_t t);
 SCCP_API void SCCP_CALL sccp_dev_set_keyset(constDevicePtr d, uint8_t lineInstance, uint32_t callid, skinny_keymode_t softKeySetIndex);
 SCCP_API void SCCP_CALL sccp_dev_set_ringer(constDevicePtr d, skinny_ringtype_t ringtype, skinny_ringduration_t duration, uint8_t lineInstance, uint32_t callid);
-SCCP_API void SCCP_CALL sccp_dev_cleardisplay(constDevicePtr d);
+SCCP_API void SCCP_CALL sccp_dev_cleardisplay(constDevicePtr d);	/* review 2026-09: the definition is an empty shell, see the note in sccp_device.c */
 SCCP_API void SCCP_CALL sccp_dev_set_registered(devicePtr d, skinny_registrationstate_t state);
 SCCP_API void SCCP_CALL sccp_dev_set_speaker(constDevicePtr d, uint8_t mode);
 SCCP_API void SCCP_CALL sccp_dev_set_microphone(devicePtr d, uint8_t mode);
@@ -412,7 +412,7 @@ SCCP_API void SCCP_CALL sccp_dev_deactivate_cplane(constDevicePtr d);
 SCCP_API void SCCP_CALL sccp_dev_starttone(constDevicePtr d, skinny_tone_t tone, uint8_t lineInstance, uint32_t callid, skinny_toneDirection_t direction);
 SCCP_API void SCCP_CALL sccp_dev_stoptone(constDevicePtr d, uint8_t lineInstance, uint32_t callid);
 SCCP_API void SCCP_CALL sccp_dev_clearprompt(constDevicePtr d, uint8_t lineInstance, uint32_t callid);
-SCCP_API void SCCP_CALL sccp_dev_display_debug(constDevicePtr d, const char *msg, const char *file, const int lineno, const char *pretty_function);
+SCCP_API void SCCP_CALL sccp_dev_display_debug(constDevicePtr d, const char *msg, const char *file, const int lineno, const char *pretty_function);	/* review 2026-09: declared unconditionally, defined only under the never-defined UNUSEDCODE - a symbol the header promises and no object provides */
 SCCP_API void SCCP_CALL sccp_dev_displayprompt_debug(constDevicePtr d, const uint8_t lineInstance, const uint32_t callid, const char *msg, int timeout, const char *file, const int lineno, const char *pretty_function);
 SCCP_API void SCCP_CALL sccp_dev_displaynotify_debug(constDevicePtr d, const char *msg, const uint8_t timeout, const char *file, const int lineno, const char *pretty_function);
 SCCP_API void SCCP_CALL sccp_dev_displayprinotify_debug(constDevicePtr d, const char *msg, const sccp_message_priority_t priority, const uint8_t timeout, const char *file, const int lineno, const char *pretty_function);
