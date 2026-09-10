@@ -53,7 +53,7 @@ void sccp_dump_packet(const unsigned char * const messagebuffer, int len)
 {
 	static const int numcolumns = 16;									// number output columns
 
-	if (len <= 0 || !messagebuffer || !sccp_strlen((const char *) messagebuffer)) {				// safe quard
+	if (len <= 0 || !messagebuffer) {									// safe guard; a strlen test here refused any packet whose first byte was 0
 		sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_1 "SCCP: messagebuffer is not valid. exiting sccp_dump_packet\n");
 		return;
 	}

@@ -659,6 +659,10 @@ static int sccp_manager_line_fwd_update(struct mansession *s, const struct messa
 					sccp_copy_string(ld->cfwd[cfwd_type].number, destination, sizeof(ld->cfwd[cfwd_type].number));
 					sccp_feat_changed(ld->device, ld, sccp_cfwd2feature(cfwd_type));
 					snprintf(cbuf, sizeof(cbuf), "Line %s CallForward %s set to %s", lineName, sccp_cfwd2str(cfwd_type), destination);
+				} else {
+					/* used to fall through to an ack with an empty message */
+					astman_send_error(s, m, "Unknown Forwardtype, expected one of: all, busy, noanswer");
+					return 0;
 				}
 			}
 			sccp_dev_forward_status(line, ld->lineInstance, ld->device);
@@ -820,6 +824,10 @@ static int sccp_manager_startCall(struct mansession *s, const struct message *m)
 #	else
 	AUTO_RELEASE(sccp_channel_t, new_channel, sccp_channel_newcall(line, d, sccp_strlen_zero(number) ? NULL : (char *)number, SKINNY_CALLTYPE_OUTBOUND, NULL, NULL));
 #	endif
+	if (!new_channel) {
+		astman_send_error(s, m, "Could not start the call");					/* it always said "Call Started" */
+		return 0;
+	}
 	astman_send_ack(s, m, "Call Started");
 	return 0;
 }
@@ -1173,12 +1181,15 @@ boolean_t sccp_manager_action2str(const char *manager_command, char **outStr)
 
 	if(!outStr || sccp_strlen_zero(manager_command) || !(buf = ast_str_thread_get(&hookresult_threadbuf, HOOKRESULT_INITSIZE))) {
 		pbx_log(LOG_ERROR, "SCCP: No OutStr or Command Provided\n");
-        	return -2;
+        	return FALSE;										/* -2 through a _Bool is TRUE: the error path reported success */
 	}
 
 	struct manager_custom_hook hook = {__FILE__, __sccp_manager_hookresult};
         failure = ast_hook_send_action(&hook, manager_command);							/* "Action: ParkedCalls\r\n" */
-        if (!failure) {
+	/* the hook appends into the same thread buffer and may have grown it, which moves
+	 * it; the pointer fetched above is not to be trusted after the call */
+	buf = ast_str_thread_get(&hookresult_threadbuf, HOOKRESULT_INITSIZE);
+        if (!failure && buf) {
 		sccp_log(DEBUGCAT_CORE)("SCCP: Sending AMI Result String: %s\n", pbx_str_buffer(buf));
         	*outStr = pbx_strdup(pbx_str_buffer(buf));
         }

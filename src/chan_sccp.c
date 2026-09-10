@@ -313,17 +313,19 @@ int sccp_preUnload(void)
 	iVoicemail.stopModule();
 	usleep(100);												// wait for events to finalize
 
-	sccp_event_module_stop();
-
 	/* stop services */
 	sccp_session_terminateAll();
 	sccp_manager_module_stop();
-#ifdef CS_DEVSTATE_FEATURE	
+#ifdef CS_DEVSTATE_FEATURE
 	sccp_devstate_module_stop();
 #endif
 #ifdef CS_SCCP_CONFERENCE
 	sccp_conference_module_stop();
 #endif
+	/* after the modules that subscribe to events, not before: sccp_event_unsubscribe is a
+	 * no-op once the event module has stopped, so the manager, devstate and conference
+	 * unsubscribes above all used to do nothing */
+	sccp_event_module_stop();
 	sccp_softkey_clear();
 	sccp_threadpool_destroy(GLOB(general_threadpool));
 	sccp_refcount_destroy();

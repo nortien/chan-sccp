@@ -146,7 +146,7 @@ static void parseButtonArgs(const char * args, feature_state_t * states)
 			// sccp_log((DEBUGCAT_FEATURE))(VERBOSE_PREFIX_3 "SCCP: parseButtonArgs(%p): added: '%s' -> '%s', %d, %d, %d, '%s'\n", (void *)&states[state], arg, ast_devstate2str(state), states[state].value.strct.rythm,
 			// states[state].value.strct.color, states[state].value.strct.icon, ast_devstate2str(states[state].nextstate));
 		} else {
-			pbx_log(LOG_ERROR, "SCCP: (parseButtonArgs) could not parse '%s', failed segment:'%s'\n", args, args);
+			pbx_log(LOG_ERROR, "SCCP: (parseButtonArgs) could not parse '%s', failed segment:'%s'\n", args, arg);
 		}
 	}
 	// printStates(states);

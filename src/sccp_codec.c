@@ -151,21 +151,26 @@ char * sccp_codec_multiple2str(char * buf, size_t size, const skinny_codec_t * c
 	memset(buf, 0, size);
 	char * endptr = buf;
 	int    comma  = 0;
+	/* every snprintf here was given the whole buffer size rather than what is left
+	 * after endptr, so a long list could run past the end of buf */
+#define REMAINING (size - (size_t)(endptr - buf))
 
-	snprintf(endptr++, size, "[");
+	snprintf(endptr, REMAINING, "[");
 	endptr += strlen(endptr);
-	for (uint x = 0; x < clength; x++) {
+	for (uint x = 0; x < clength && REMAINING > 1; x++) {
 		if (codecs[x] == SKINNY_CODEC_NONE || codecs[x] == SKINNY_CODEC_NONSTANDARD) {
 			break;
 		}
 		// snprintf(endptr, size, "%s%s (%d)", comma++ ? ", " : "",codec2name(codecs[x]), codecs[x]);
-		snprintf(endptr, size, "%s%s", comma++ ? ", " : "", codec2name(codecs[x]));
+		snprintf(endptr, REMAINING, "%s%s", comma++ ? ", " : "", codec2name(codecs[x]));
 		endptr += strlen(endptr);
 	}
-	if (buf == endptr) {
-		snprintf(endptr++, size, "nothing)");
+	if (endptr == buf + 1) {
+		snprintf(endptr, REMAINING, "nothing");
+		endptr += strlen(endptr);
 	}
-	snprintf(endptr, size, "]");
+	snprintf(endptr, REMAINING, "]");
+#undef REMAINING
 	return buf;
 }
 

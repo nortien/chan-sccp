@@ -1327,7 +1327,7 @@ static void sccp_protocol_sendUserToDeviceDataVersion1Message(constDevicePtr dev
 			sccp_log(DEBUGCAT_HIGH) (VERBOSE_PREFIX_1 "%s: (sccp_protocol_sendUserToDeviceDataVersion1Message) Message sent to device  (hdr_len: %d, msglen: %d/%d, msg-size: %d).\n", DEV_ID_LOG(device), hdr_len, msg_len, (int) strlen(xmlData), hdr_len + msg_len);
 			segment++;
 		}
-	} else if (data_len < StationMaxXMLMessage) {
+	} else if (data_len <= StationMaxXMLMessage) {							/* the packet is sized to the data; a message of exactly the maximum fell between the two branches and was never sent */
 		sccp_msg_t *msg = NULL;
 
 		hdr_len = sizeof(msg->data.UserToDeviceDataVersion1Message);

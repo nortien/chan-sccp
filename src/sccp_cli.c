@@ -1029,9 +1029,11 @@ static int sccp_show_device(int fd, sccp_cli_totals_t *totals, struct mansession
 	sccp_accessory_t activeAccessory = sccp_device_getActiveAccessory(d);
 	sccp_accessorystate_t activeAccessoryState = sccp_device_getAccessoryStatus(d, activeAccessory);
 
+	SCCP_LIST_LOCK(&d->permithosts);									/* a reload rebuilds this list */
 	SCCP_LIST_TRAVERSE(&d->permithosts, hostname, list) {
 		ast_str_append(&permithost_buf, DEFAULT_PBX_STR_BUFFERSIZE, "%s ", hostname->name);
 	}
+	SCCP_LIST_UNLOCK(&d->permithosts);
 
 	if (!s) {
 		CLI_AMI_OUTPUT(fd, s, "\n--- SCCP channel driver device settings ----------------------------------------------------------------------------------\n");
@@ -2695,7 +2697,7 @@ static int sccp_dnd_device(int fd, sccp_cli_totals_t *totals, struct mansession 
 
 	int local_line_total = 0;
 
-	if (3 > argc || argc > 5) {
+	if (4 > argc || argc > 5) {											/* uses argv[3] */
 		return RESULT_SHOWUSAGE;
 	}
 
@@ -2736,7 +2738,7 @@ static int sccp_dnd_device(int fd, sccp_cli_totals_t *totals, struct mansession 
 	return res;
 }
 
-static char cli_dnd_device_usage[] = "Usage: sccp dnd <deviceId> [off|reject|silent]\n" "       Send a dnd to an SCCP Device. Optionally specifying new DND state  [off|reject|silent]\n";
+static char cli_dnd_device_usage[] = "Usage: sccp dnd device <deviceId> [off|reject|silent]\n" "       Send a dnd to an SCCP Device. Optionally specifying new DND state  [off|reject|silent]\n";
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 #define CLI_COMMAND "sccp", "dnd", "device"
@@ -2861,7 +2863,7 @@ static int sccp_remove_line_from_device(int fd, int argc, char *argv[])
 {
 	int res = RESULT_FAILURE;
 
-	if (3 > argc || argc > 5) {
+	if (5 > argc || argc > 5) {											/* uses argv[3] and argv[4] */
 		return RESULT_SHOWUSAGE;
 	}
 	AUTO_RELEASE(sccp_device_t, d, sccp_device_find_byid(argv[3], FALSE));

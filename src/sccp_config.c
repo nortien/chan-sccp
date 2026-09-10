@@ -1038,6 +1038,7 @@ void sccp_config_cleanup_dynamically_allocated_memory(void * const obj, const sc
 				// pbx_log(LOG_NOTICE, "SCCP: Freeing %s='%s'\n", sccpConfigOption[i].name, str);
 				sccp_free(str);
 				str = NULL;
+				*(char **)dst = NULL;								/* the struct kept pointing at the freed string */
 			}
 		}
 	}
@@ -2328,6 +2329,7 @@ sccp_value_changed_t sccp_config_addButton(sccp_buttonconfig_list_t * buttonconf
 	SCCP_LIST_LOCK(buttonconfigList);
 	if (!(config = (sccp_buttonconfig_t *)sccp_calloc(1, sizeof(sccp_buttonconfig_t)))) {
 		pbx_log(LOG_ERROR, SS_Memory_Allocation_Error, "SCCP");
+		SCCP_LIST_UNLOCK(buttonconfigList);							/* was left held */
 		return SCCP_CONFIG_CHANGE_ERROR;
 	}
 	config->index = buttonindex;
@@ -3213,7 +3215,9 @@ static uint8_t sccp_config_readSoftKeySet(uint8_t * softkeyset, const char * dat
 	char * label = strtok_r(labels, delims, &labelrest);
 	while (label) {
 		label = pbx_strip(label);
-		if ((softkey = sccp_config_getSoftkeyLbl(label)) != -1 && (i + 1) < StationMaxSoftKeySetDefinition) {
+		/* the set holds StationMaxSoftKeySetDefinition keys; the old (i + 1) bound
+		 * silently dropped the sixteenth */
+		if ((softkey = sccp_config_getSoftkeyLbl(label)) != -1 && i < StationMaxSoftKeySetDefinition) {
 			softkeyset[i++] = softkey;
 		}
 		label = strtok_r(NULL, delims, &labelrest);
@@ -3254,7 +3258,10 @@ void sccp_config_softKeySet(PBX_VARIABLE_TYPE * variable, const char * name)
 	if (!softKeySetConfiguration) {
 		// sccp_log((DEBUGCAT_CONFIG + DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_3 "Adding Softkeyset: %s\n", name);
 		softKeySetConfiguration = (sccp_softKeySetConfiguration_t *)sccp_calloc(1, sizeof(sccp_softKeySetConfiguration_t));
-		memset(softKeySetConfiguration, 0, sizeof(sccp_softKeySetConfiguration_t));
+		if (!softKeySetConfiguration) {
+			pbx_log(LOG_ERROR, SS_Memory_Allocation_Error, "SCCP");
+			return;
+		}
 
 		sccp_copy_string(softKeySetConfiguration->name, name, sizeof(softKeySetConfiguration->name));
 		softKeySetConfiguration->numberOfSoftKeySets = 0;
@@ -3601,7 +3608,8 @@ int sccp_manager_config_metadata(struct mansession * s, const struct message * m
 							astman_append(s, "\"DefaultValue\":\"%s\"", config[cur_elem].defaultValue);
 
 							if (!sccp_strlen_zero(config[cur_elem].description)) {
-								char * description      = pbx_strdup(config[cur_elem].description);
+								char * description_orig = pbx_strdup(config[cur_elem].description);	/* strsep walks description; free the start, not where it ended up */
+								char * description      = description_orig;
 								char * description_part = "";
 								int    comma2           = 0;
 
@@ -3610,7 +3618,7 @@ int sccp_manager_config_metadata(struct mansession * s, const struct message * m
 									astman_append(s, "%s\"%s\"", comma2++ ? "," : "", description_part);
 								}
 								astman_append(s, "]");
-								sccp_free(description);
+								sccp_free(description_orig);
 							}
 						}
 						astman_append(s, "}");
@@ -3644,6 +3652,7 @@ static int _config_generate_wiki(char * filename)
 	long unsigned int         sccp_option       = 0;
 	long unsigned int         segment           = 0;
 	char *                    description       = "";
+	char *                    description_orig  = NULL;
 	char *                    description_part  = "";
 	char                      fn[PATH_MAX];
 
@@ -3734,15 +3743,14 @@ static int _config_generate_wiki(char * filename)
 					if (!sccp_strlen_zero(config[sccp_option].description)) {
 						fprintf(f, "<tr class='descr_row'><td></td>\n");
 						fprintf(f, "<td class='description' id='%s' colspan='4'><small>", config[sccp_option].name);
-						description = pbx_strdup(config[sccp_option].description);
+						description_orig = pbx_strdup(config[sccp_option].description);	/* see below */
+						description = description_orig;
 						while ((description_part = strsep(&description, "\n"))) {
 							if (!sccp_strlen_zero(description_part)) {
 								fprintf(f, "%s.<br>", description_part);
 							}
 						}
-						if (description_part) {
-							sccp_free(description_part);
-						}
+						sccp_free(description_orig);				/* description_part is the last piece (NULL after the loop) and description has been walked to the end; neither is the block to free */
 						fprintf(f, "</small></td>\n");
 						sccp_free(description);
 					}
@@ -3783,6 +3791,7 @@ int sccp_config_generate(char * filename, int configType)
 	long unsigned int         sccp_option         = 0;
 	long unsigned int         segment             = 0;
 	char *                    description         = "";
+	char *                    description_orig  = NULL;
 	char *                    description_part    = "";
 	char                      name_and_value[100] = "";
 	char                      size_str[15]        = "";
@@ -3914,7 +3923,8 @@ int sccp_config_generate(char * filename, int configType)
 							((config[sccp_option].flags & SCCP_CONFIG_FLAG_DEPRECATED) == SCCP_CONFIG_FLAG_DEPRECATED) ? "(DEPRECATED) " : "",
 							((config[sccp_option].flags & SCCP_CONFIG_FLAG_OBSOLETE) == SCCP_CONFIG_FLAG_OBSOLETE) ? "(DEPRECATED) " : "", size_str);
 						if (!sccp_strlen_zero(config[sccp_option].description)) {
-							description = pbx_strdup(config[sccp_option].description);
+							description_orig = pbx_strdup(config[sccp_option].description);	/* see below */
+							description = description_orig;
 							while ((description_part = strsep(&description, "\n"))) {
 								if (!sccp_strlen_zero(description_part)) {
 									if (linelen) {
@@ -3925,9 +3935,7 @@ int sccp_config_generate(char * filename, int configType)
 									linelen = 0;
 								}
 							}
-							if (description_part) {
-								sccp_free(description_part);
-							}
+							sccp_free(description_orig);				/* description_part is the last piece (NULL after the loop) and description has been walked to the end; neither is the block to free */
 							sccp_free(description);
 						} else {
 							fprintf(f, "\n");
