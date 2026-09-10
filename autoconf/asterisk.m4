@@ -4,246 +4,219 @@ dnl CREATED BY: Created by Diederik de Groot
 dnl LICENSE: This program is free software and may be modified and distributed under the terms of the GNU Public License version 3.
 dnl          See the LICENSE file at the top of the source tree.
 
-AC_DEFUN([AST_GET_VERSION], [
-	CONFIGURE_PART([Checking Asterisk Version:])
-	REALTIME_USEABLE=1
-	version_found=0
-	
-	AC_ARG_WITH(asterisk_version,
-	AC_HELP_STRING([--with-asterisk-version[=PATH]], [specify the asterisk_version manually (fmt=major.minor)]), [ac_cv_use_asterisk_version="${withval}"], [ac_cv_use_asterisk_version="no"])
-	AS_IF([test "_${ac_cv_use_asterisk_version}" != "_no"], [
-		major=${ac_cv_use_asterisk_version%.*}
-		minor=${ac_cv_use_asterisk_version#*.}
-		combined=`printf "1%d%02d" $major $minor`
+dnl How the asterisk version is established. First source that yields a number wins:
+dnl
+dnl   1. --with-asterisk-version=major.minor   the manual override; never needed, kept for
+dnl                                            builds against headers that have no other marker
+dnl   2. PACKAGE_VERSION in asterisk/autoconfig.h
+dnl                                            asterisk's own configure.ac writes its major there
+dnl                                            ("18", "20".."23") - but only since 18.x; every
+dnl                                            release tarball of 11-17 and 19 says "trunk"
+dnl                                            (checked against the tags on github, 2026-09-10)
+dnl   3. AMI_VERSION in asterisk/manager.h     for those "trunk" trees: the AMI major is bumped with
+dnl                                            every asterisk major and has been asterisk_major - 11
+dnl                                            from 13 (2.x) through 23 (12.0.0); 12 shares the 2.x
+dnl                                            major with 13 and is told apart by format_cache.h,
+dnl                                            which 13 introduced. Gives the major only
+dnl   4. `asterisk -V` of the binary living in the same prefix as the headers
+dnl                                            adds the exact minor, and only when its major agrees
+dnl                                            with 3. - the header search may point at the system
+dnl                                            sbin, whose asterisk need not be the one the headers
+dnl                                            belong to
+dnl   5. header fingerprints                   the pre-existing chain, now only for AMI 1.x (<= 11)
+dnl
+dnl asterisk/version.h with its ASTERISK_VERSION macro - what this used to read - has been a hard
+dnl #error ("use asterisk/ast_version.h") since 13 already, and ast_version.h only offers functions,
+dnl so nothing older than 18 carries a compile-time version string any more.
 
-		ASTERISK_VERSION_NUMBER="${combined}"
-		ASTERISK_VER_GROUP="1${major}"
-		ASTERISK_REPOS_LOCATION="TRUNK"
+dnl Parse ${ast_ver_str} into ast_ver_major / ast_ver_minor / ast_ver_patch (minor and patch
+dnl default to 0, major stays empty when the string carries no version at all, e.g. "trunk").
+dnl Accepts the forms seen in the wild: 23, 13.38.3, 16.28.0~dfsg, GIT-13-abcdef, certified/18.9-cert1,
+dnl SVN-branch-1.8-r123456; "GIT-master-abcdef" and "trunk" deliberately yield nothing.
+AC_DEFUN([AST_VERSION_PARSE], [
+	ast_ver_str=`echo "${ast_ver_str}" | sed -e 's/^"//' -e 's/"$//' -e 's/^Asterisk //' -e 's/^SVN-branch-//' -e 's/^SVN-trunk-//' -e 's/^GIT-//' -e 's/^certified\///'`
+	ast_ver_major=`echo "${ast_ver_str}" | sed -n 's/^\([[0-9]][[0-9]]*\).*/\1/p'`
+	ast_ver_minor=`echo "${ast_ver_str}" | sed -n 's/^[[0-9]][[0-9]]*\.\([[0-9]][[0-9]]*\).*/\1/p'`
+	ast_ver_patch=`echo "${ast_ver_str}" | sed -n 's/^[[0-9]][[0-9]]*\.[[0-9]][[0-9]]*\.\([[0-9]][[0-9]]*\).*/\1/p'`
+	if test -n "${ast_ver_major}"; then
+		dnl expr strips leading zeros, which printf %d would otherwise read as octal
+		ast_ver_major=`expr "${ast_ver_major}" + 0`
+		ast_ver_minor=`expr "${ast_ver_minor:-0}" + 0`
+		ast_ver_patch=`expr "${ast_ver_patch:-0}" + 0`
+	fi
+])
 
-		case "${ASTERISK_VER_GROUP}" in
-			102) AC_DEFINE([ASTERISK_CONF_1_2], [1], [Defined ASTERISK_CONF_1_2]);;
-			104) AC_DEFINE([ASTERISK_CONF_1_4], [1], [Defined ASTERISK_CONF_1_4]);;
-			106) AC_DEFINE([ASTERISK_CONF_1_6], [1], [Defined ASTERISK_CONF_1_6]);;
-			108) AC_DEFINE([ASTERISK_CONF_1_8], [1], [Defined ASTERISK_CONF_1_8]);;
-			110) AC_DEFINE([ASTERISK_CONF_1_10], [1], [Defined ASTERISK_CONF_1_10]);;
-			111) AC_DEFINE([ASTERISK_CONF_1_11], [1], [Defined ASTERISK_CONF_1_11]);;
-			112) AC_DEFINE([ASTERISK_CONF_1_12], [1], [Defined ASTERISK_CONF_1_12]);;
-			113) AC_DEFINE([ASTERISK_CONF_1_13], [1], [Defined ASTERISK_CONF_1_13]);;
-			114) AC_DEFINE([ASTERISK_CONF_1_14], [1], [Defined ASTERISK_CONF_1_14]);;
-			115) AC_DEFINE([ASTERISK_CONF_1_15], [1], [Defined ASTERISK_CONF_1_15]);;
-			116) AC_DEFINE([ASTERISK_CONF_1_16], [1], [Defined ASTERISK_CONF_1_16]);;
-			117) AC_DEFINE([ASTERISK_CONF_1_17], [1], [Defined ASTERISK_CONF_1_17]);;
-			118) AC_DEFINE([ASTERISK_CONF_1_18], [1], [Defined ASTERISK_CONF_1_18]);;
-			119) AC_DEFINE([ASTERISK_CONF_1_19], [1], [Defined ASTERISK_CONF_1_19]);;
-			123) AC_DEFINE([ASTERISK_CONF_1_23], [1], [Defined ASTERISK_CONF_1_23]);;
-			122) AC_DEFINE([ASTERISK_CONF_1_22], [1], [Defined ASTERISK_CONF_1_22]);;
-			121) AC_DEFINE([ASTERISK_CONF_1_21], [1], [Defined ASTERISK_CONF_1_21]);;
-			120) AC_DEFINE([ASTERISK_CONF_1_20], [1], [Defined ASTERISK_CONF_1_20]);;
-			*)
-				AC_DEFINE([ASTERISK_CONF], [0], [NOT Defined ASTERISK_CONF !!])
-				ASTERISK_INCOMPATIBLE=yes;;
-		esac
-		AC_DEFINE_UNQUOTED([ASTERISK_VERSION_NUMBER], ${ASTERISK_VERSION_NUMBER}, [ASTERISK Version Number])
-		AC_DEFINE_UNQUOTED([ASTERISK_VERSION_GROUP], ${ASTERISK_VER_GROUP}, [ASTERISK Version Group])
-		AC_DEFINE_UNQUOTED([ASTERISK_REPOS_LOCATION], ${ASTERISK_REPOS_LOCATION},[ASTERISK Source Location])
-		
-		version_found=1
-		AC_MSG_RESULT([Found 'Asterisk Version ${ASTERISK_VERSION_NUMBER}'.])
-	], [
-		dnl asterisk/version.h + the ASTERISK_VERSION macro is how this used to be
-		dnl detected, but modern Asterisk (confirmed on 22.10.1 and 23.4.1) turned
-		dnl that header into a hard #error ("use asterisk/ast_version.h instead"),
-		dnl and ast_version.h only exposes the version via *functions*
-		dnl (ast_get_version()), not a preprocessor-time macro - so it can't be
-		dnl probed this same compile+grep way at all. asterisk/autoconfig.h's
-		dnl PACKAGE_VERSION (a plain autotools convention, e.g. "23" on modern
-		dnl Asterisk) is the compile-time-visible replacement - verified present
-		dnl and correctly reflecting the major version on both 22.10.1 (extracted
-		dnl asterisk22-devel .deb, not installed - see chan-sccp CLAUDE.md) and
-		dnl the live 23.4.1 headers on 2026-08-14.
-		AC_CHECK_HEADER([asterisk/autoconfig.h],[
-			AC_MSG_CHECKING([version in asterisk/autoconfig.h])
-			AC_COMPILE_IFELSE(
-				[AC_LANG_PROGRAM(
-					[
-						#define AST_MODULE_SELF_SYM "__internal_chan_sccp_la_self"
-						#define AST_MODULE "chan_sccp"
-						#include <asterisk/autoconfig.h>
-					],[
-						const char *test_src = PACKAGE_VERSION;
-					]
-				)],[
-				AC_MSG_RESULT(processing...)
-				# autoconfig.h is complex enough that gcc's preprocessor splits the
-				# `test_src = PACKAGE_VERSION;` assignment across two output lines
-				# with a `# <N> "file" 3 4` line-marker directive in between (this
-				# didn't happen with the old, much simpler asterisk/version.h).
-				# A single-line `grep test_src | grep -o` misses the value entirely
-				# since it ends up on the *next* line, not test_src's own line -
-				# discovered by testing on real preprocessor output on 2026-08-14,
-				# not assumed. Look 2 lines past the match, drop any line-marker
-				# lines (they start with '#' and would also match, wrongly, on the
-				# quoted source filename inside them), then extract the quoted value.
-				pbx_ver=$(eval "$ac_cpp conftest.$ac_ext" 2>/dev/null | $EGREP -A2 test_src | $EGREP -v '^#' | $EGREP -o '\".*\"')
+dnl Turn ast_ver_major/minor/patch into every version define and substitution the tree relies on.
+dnl One place for all five sources, so they cannot drift apart:
+dnl   asterisk >= 10 : ASTERISK_VERSION_NUMBER = 1<major><minor%02d>   (13.38 -> 11338, 23.4 -> 12304)
+dnl                    ASTERISK_VERSION_GROUP  = 1<major>              (113, 123)
+dnl   asterisk 1.x   : ASTERISK_VERSION_NUMBER = 1<minor%02d><patch%02d> (1.6.2 -> 10602)
+dnl                    ASTERISK_VERSION_GROUP  = 1<minor%02d>          (106, 108)
+dnl ASTERISK_REPOS_LOCATION is expected to be set by the caller beforehand.
+AC_DEFUN([AST_VERSION_SET], [
+	if test "${ast_ver_major}" = "1"; then
+		ASTERISK_VER_GROUP=`printf "1%02d" ${ast_ver_minor}`
+		ASTERISK_VERSION_NUMBER=`printf "1%02d%02d" ${ast_ver_minor} ${ast_ver_patch}`
+	else
+		ASTERISK_VER_GROUP="1${ast_ver_major}"
+		ASTERISK_VERSION_NUMBER=`printf "1%d%02d" ${ast_ver_major} ${ast_ver_minor}`
+	fi
+	ASTERISK_REPOS_LOCATION="${ASTERISK_REPOS_LOCATION:-TGZ}"
 
-				# process tgz, branch, trunk
-				if echo $pbx_ver|grep -q "\"SVN-branch"; then
-					ASTERISK_REPOS_LOCATION=BRANCH
-					pbx_ver=${pbx_ver:12}						# remove head
-				elif echo $pbx_ver|grep -q "\"SVN-trunk"; then
-					ASTERISK_REPOS_LOCATION=TRUNK
-					pbx_ver=${pbx_ver:11}						# remove head
-					if test "${pbx_ver:0:1}" == "r" ; then
-						pbx_ver="1.10.1"					# default trunk without number
-					fi
-				else
-					ASTERISK_REPOS_LOCATION=TGZ
-				fi
+	case "${ASTERISK_VER_GROUP}" in
+		102)
+			REALTIME_USEABLE=0
+			AC_DEFINE([ASTERISK_CONF_1_2], [1], [Defined ASTERISK_CONF_1_2]);;
+		104) AC_DEFINE([ASTERISK_CONF_1_4], [1], [Defined ASTERISK_CONF_1_4]);;
+		106) AC_DEFINE([ASTERISK_CONF_1_6], [1], [Defined ASTERISK_CONF_1_6]);;
+		108) AC_DEFINE([ASTERISK_CONF_1_8], [1], [Defined ASTERISK_CONF_1_8]);;
+		110) AC_DEFINE([ASTERISK_CONF_1_10], [1], [Defined ASTERISK_CONF_1_10]);;
+		111) AC_DEFINE([ASTERISK_CONF_1_11], [1], [Defined ASTERISK_CONF_1_11]);;
+		112) AC_DEFINE([ASTERISK_CONF_1_12], [1], [Defined ASTERISK_CONF_1_12]);;
+		113) AC_DEFINE([ASTERISK_CONF_1_13], [1], [Defined ASTERISK_CONF_1_13]);;
+		114) AC_DEFINE([ASTERISK_CONF_1_14], [1], [Defined ASTERISK_CONF_1_14]);;
+		115) AC_DEFINE([ASTERISK_CONF_1_15], [1], [Defined ASTERISK_CONF_1_15]);;
+		116) AC_DEFINE([ASTERISK_CONF_1_16], [1], [Defined ASTERISK_CONF_1_16]);;
+		117) AC_DEFINE([ASTERISK_CONF_1_17], [1], [Defined ASTERISK_CONF_1_17]);;
+		118) AC_DEFINE([ASTERISK_CONF_1_18], [1], [Defined ASTERISK_CONF_1_18]);;
+		119) AC_DEFINE([ASTERISK_CONF_1_19], [1], [Defined ASTERISK_CONF_1_19]);;
+		120) AC_DEFINE([ASTERISK_CONF_1_20], [1], [Defined ASTERISK_CONF_1_20]);;
+		121) AC_DEFINE([ASTERISK_CONF_1_21], [1], [Defined ASTERISK_CONF_1_21]);;
+		122) AC_DEFINE([ASTERISK_CONF_1_22], [1], [Defined ASTERISK_CONF_1_22]);;
+		123) AC_DEFINE([ASTERISK_CONF_1_23], [1], [Defined ASTERISK_CONF_1_23]);;
+		*)
+			AC_DEFINE([ASTERISK_CONF], [0], [NOT Defined ASTERISK_CONF !!])
+			ASTERISK_INCOMPATIBLE=yes;;
+	esac
+	AC_DEFINE_UNQUOTED([ASTERISK_VERSION_NUMBER], ${ASTERISK_VERSION_NUMBER}, [ASTERISK Version Number])
+	AC_DEFINE_UNQUOTED([ASTERISK_VERSION_GROUP], ${ASTERISK_VER_GROUP}, [ASTERISK Version Group])
+	AC_DEFINE_UNQUOTED([ASTERISK_REPOS_LOCATION], ${ASTERISK_REPOS_LOCATION},[ASTERISK Source Location])
+	AC_SUBST([ASTERISK_VERSION_NUMBER])
+	AC_SUBST([ASTERISK_VER_GROUP])
+	AC_SUBST([ASTERISK_REPOS_LOCATION])
+	version_found=1
+])
 
-				# remove from pbx_ver
-				# remove from pbx_ver
-				pbx_ver=${pbx_ver%%-*}							# remove tail
-				#pbx_ver=${pbx_ver//\"/}						# remove '"'
-				pbx_ver=`echo ${pbx_ver} | sed 's/"//g'`
+dnl The supported window, applied to every auto-detected version (the manual override keeps
+dnl its old behaviour of only warning at the end of configure, see ASTERISK_INCOMPATIBLE).
+AC_DEFUN([AST_VERSION_CHECK_BOUNDS], [
+	if test ${ASTERISK_VER_GROUP} -lt ${MIN_ASTERISK_VERSION}; then
+		echo ""
+		CONFIGURE_PART([Asterisk Version ${ast_ver_str} Not Supported])
+		echo ""
+		echo "This version of chan-sccp-b only has support for Asterisk 1.6.x and above."
+		echo ""
+		echo "Please install a higher version of asterisk"
+		echo ""
+		echo ""
+		exit 255
+	fi
+	if test ${ASTERISK_VER_GROUP} -gt ${MAX_ASTERISK_VERSION}; then
+		echo ""
+		CONFIGURE_PART([Asterisk Version ${ast_ver_str} Not Supported])
+		echo ""
+		echo "This version of chan-sccp-b has no support for Asterisk ${ast_ver_major} yet."
+		echo ""
+		echo "Please install a lower version of asterisk"
+		echo ""
+		echo ""
+		exit 255
+	fi
+])
 
-				# process version number
-				#
-				# Note (2026-08-14): switched the probe above from
-				# asterisk/version.h's ASTERISK_VERSION macro (gone on modern
-				# Asterisk - that header is now a hard #error telling you to use
-				# asterisk/ast_version.h, which only exposes the version through
-				# *functions*, not a preprocessor macro, so it can't be read this
-				# way at all) to asterisk/autoconfig.h's PACKAGE_VERSION, a plain
-				# autotools convention. On modern Asterisk (verified: 22.10.1,
-				# 23.4.1) that comes out as a bare major-version integer like
-				# "20"/"22"/"23", with no dots - added those to the match list
-				# below. The `elif test ${#x} -lt 3` branch used to hardcode
-				# ASTERISK_VER_GROUP to the literal string "110" for *any*
-				# 2-character match (a real bug - "20" would have silently
-				# become group 110, not 120) - never caught before because
-				# every actual build of this fork passes
-				# --with-asterisk-version= explicitly, bypassing this whole
-				# auto-detect path. Fixed to `1${x}` so each 2-character entry
-				# gets its own correct group.
-				for x in "1.2" "1.4" "1.6" "1.8" "1.10" "10" "11" "12" "13" "14" "15" "16" "17" "18" "19" "20" "21" "22" "23"; do
-					if test $version_found == 0; then
-						if echo $pbx_ver|grep -q "$x"; then
-							if test ${#x} -gt 3; then		# 1.10
-								ASTERISK_VER_GROUP="`echo $x|sed 's/\.//g'`"
-							elif test ${#x} -lt 3; then		# e.g. 10, 11, ... 23
-								ASTERISK_VER_GROUP="1${x}"
-							else
-								ASTERISK_VER_GROUP="`echo $x|sed 's/\./0/g'`"
-							fi
-							AC_SUBST([ASTERISK_VER_GROUP])
-							
-							if test "$ASTERISK_VER_GROUP" == "102"; then						# switch off realtime for 1.2
-								REALTIME_USEABLE=0
-							fi
-							
-							#ASTERISK_MINOR_VER=${pbx_ver/$x\./}							# remove leading '1.x.'
-							ASTERISK_MINOR_VER=`echo $pbx_ver|sed "s/^$x.\([0-9]*\)\(.*\)/\1/g"`			# remove leading and trailing .*
-							#ASTERISK_MINOR_VER1=${ASTERISK_MINOR_VER%%.*}						# remove trailing '.*'
-							#if test ${#ASTERISK_MINOR_VER1} -gt 1; then
-								#ASTERISK_VERSION_NUMBER="${ASTERISK_VER_GROUP}${ASTERISK_MINOR_VER1}"		# add only third version part
-							#else
-								#ASTERISK_VERSION_NUMBER="${ASTERISK_VER_GROUP}0${ASTERISK_MINOR_VER1}"		# add only third version part
-							#fi
-							#ASTERISK_STR_VER="${x}.${ASTERISK_MINOR_VER1}"
+dnl Source 3: AMI_VERSION in manager.h, read straight from the file the header search found
+dnl (it needs no compiler: the define is a plain quoted string on its own line in every version).
+dnl Only works out the asterisk major, into ast_ami_asterisk_major; whether the binary or this
+dnl fingerprint gets to set the version is decided by the caller.
+AC_DEFUN([AST_VERSION_AMI_MAJOR], [
+	AC_MSG_CHECKING([AMI_VERSION in asterisk/manager.h, as a fingerprint of the asterisk major])
+	ast_manager_h=""
+	for ast_inc_dir in "${PBX_INCLUDE}" "${PBX_INCLUDE}/asterisk" "${checkdir:+${checkdir}/include/asterisk}"; do
+		if test -z "${ast_manager_h}" && test -n "${ast_inc_dir}" && test -f "${ast_inc_dir}/manager.h"; then
+			ast_manager_h="${ast_inc_dir}/manager.h"
+		fi
+	done
+	ast_ami_major=""
+	if test -n "${ast_manager_h}"; then
+		ast_ami_major=`tr -s '[[:blank:]]' ' ' < "${ast_manager_h}" | sed -n 's/^.define AMI_VERSION "\([[0-9]][[0-9]]*\)\..*/\1/p' | head -n 1`
+	fi
+	ast_ami_asterisk_major=""
+	case "${ast_ami_major}" in
+		"")
+			AC_MSG_RESULT([not found]);;
+		1)
+			AC_MSG_RESULT([1.x, asterisk 11 or older - deciding by header fingerprints instead]);;
+		2)
+			if test -f "`dirname ${ast_manager_h}`/format_cache.h"; then
+				ast_ami_asterisk_major=13
+			else
+				ast_ami_asterisk_major=12
+			fi
+			AC_MSG_RESULT([2.x, asterisk ${ast_ami_asterisk_major} (format_cache.h tells 12 and 13 apart)]);;
+		*)
+			ast_ami_asterisk_major=`expr ${ast_ami_major} + 11`
+			AC_MSG_RESULT([${ast_ami_major}.x, asterisk ${ast_ami_asterisk_major}]);;
+	esac
+])
 
-							#ASTERISK_MINOR_VER=${pbx_ver/$x\./}							# remove leading '1.x.'
-							ASTERISK_MINOR_VER=`echo $pbx_ver|sed "s/^$x.\([0-9]*\)\(.*\)/\1/g"`			# remove leading and trailing .*
-							ASTERISK_MINOR_VER1=${ASTERISK_MINOR_VER%%.*}						# remove trailing '.*'
-							# PACKAGE_VERSION carries only the major version on modern asterisk,
-							# so the sed above has nothing to strip and hands the major straight
-							# back. Folding that into the minor position produced numbers like
-							# 121021 for asterisk 21, disagreeing with the 12112 that
-							# --with-asterisk-version=21.12 yields for the very same asterisk.
-							if test "x${ASTERISK_MINOR_VER1}" = "x${pbx_ver}"; then
-								ASTERISK_MINOR_VER1=0
-							fi
+dnl Source 4: the binary, for the minor that AMI_VERSION cannot give. Deliberately not the
+dnl first `asterisk` on PATH, and never trusted on its own: one branch of the header search
+dnl hardcodes PBX_SBINDIR=/usr/sbin, so under --with-asterisk=<some old tree> the system
+dnl asterisk would answer for foreign headers (seen on the bench: 23.4.1 for the 13.38.3
+dnl headers). A binary whose major disagrees with the AMI fingerprint is therefore ignored.
+dnl The prefix's own sbin is tried first, with its lib dirs on LD_LIBRARY_PATH so a self-built
+dnl asterisk finds its libasteriskssl.
+AC_DEFUN([AST_VERSION_FROM_BINARY], [
+	AC_MSG_CHECKING([for an asterisk binary next to the headers, for the exact minor])
+	ast_bin=""
+	ast_bin_line=""
+	if test "x${cross_compiling}" != "xyes"; then
+		for ast_bin_dir in "${checkdir:+${checkdir}/sbin}" "${checkdir:+${checkdir}/bin}" "${PBX_SBINDIR}"; do
+			if test -z "${ast_bin}" && test -n "${ast_bin_dir}" && test -x "${ast_bin_dir}/asterisk"; then
+				ast_bin_line=`LD_LIBRARY_PATH="${ast_bin_dir}/../lib:${ast_bin_dir}/../lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "${ast_bin_dir}/asterisk" -V 2>/dev/null | head -n 1`
+				case "${ast_bin_line}" in
+					Asterisk*) ast_bin="${ast_bin_dir}/asterisk";;
+				esac
+			fi
+		done
+	fi
+	if test -n "${ast_bin}"; then
+		ast_ver_str="${ast_bin_line}"
+		AST_VERSION_PARSE
+		if test "x${ast_ver_major}" = "x${ast_ami_asterisk_major}"; then
+			AC_MSG_RESULT([${ast_bin} says '${ast_bin_line}', matching the headers])
+			ASTERISK_REPOS_LOCATION=TGZ
+			AST_VERSION_SET
+			AST_VERSION_CHECK_BOUNDS
+			AC_MSG_RESULT([Found 'Asterisk Version ${ASTERISK_VERSION_NUMBER}' (${ast_bin} -V).])
+		else
+			AC_MSG_RESULT([${ast_bin} says '${ast_bin_line}', but the headers are asterisk ${ast_ami_asterisk_major} - ignoring it])
+			ast_ver_major=""
+		fi
+	else
+		AC_MSG_RESULT([none])
+	fi
+])
 
-							#if test ${#ASTERISK_MINOR_VER1} -gt 1; then
-								#ASTERISK_VERSION_NUMBER="${ASTERISK_VER_GROUP}${ASTERISK_MINOR_VER1}"		# add only third version part
-							#else
-								ASTERISK_VERSION_NUMBER="${ASTERISK_VER_GROUP}0${ASTERISK_MINOR_VER1}"		# add only third version part
-							#fi
+dnl Source 4b: no binary, or none that matches - the AMI major alone, with minor 0.
+AC_DEFUN([AST_VERSION_FROM_AMI], [
+	ast_ver_major="${ast_ami_asterisk_major}"
+	ast_ver_minor=0
+	ast_ver_patch=0
+	ast_ver_str="${ast_ver_major} (AMI ${ast_ami_major}.x)"
+	ASTERISK_REPOS_LOCATION=TRUNK
+	AST_VERSION_SET
+	AST_VERSION_CHECK_BOUNDS
+	AC_MSG_RESULT([Found 'Asterisk Version ${ASTERISK_VERSION_NUMBER}' (AMI_VERSION ${ast_ami_major}.x; the minor is unknown this way).])
+])
 
-							#ASTERISK_STR_VER="${x}.${ASTERISK_MINOR_VER1}"
-							
-							version_found=1
-							AC_MSG_RESULT([Found 'Asterisk Version ${ASTERISK_VERSION_NUMBER} ($x)'])
 
-							AC_DEFINE_UNQUOTED([ASTERISK_VERSION_NUMBER],`echo ${ASTERISK_VERSION_NUMBER}`,[ASTERISK Version Number])
-							AC_SUBST([ASTERISK_VERSION_NUMBER])
-							AC_DEFINE_UNQUOTED([ASTERISK_VERSION_GROUP],`echo ${ASTERISK_VER_GROUP}`,[ASTERISK Version Group])
-							AC_SUBST([ASTERISK_VER_GROUP])
-							AC_DEFINE_UNQUOTED([ASTERISK_REPOS_LOCATION],`echo ${ASTERISK_REPOS_LOCATION}`,[ASTERISK Source Location])
-							AC_SUBST([ASTERISK_REPOS_LOCATION])
-
-							case "${ASTERISK_VER_GROUP}" in
-								102) AC_DEFINE([ASTERISK_CONF_1_2], [1], [Defined ASTERISK_CONF_1_2]);;
-								104) AC_DEFINE([ASTERISK_CONF_1_4], [1], [Defined ASTERISK_CONF_1_4]);;
-								106) AC_DEFINE([ASTERISK_CONF_1_6], [1], [Defined ASTERISK_CONF_1_6]);;
-								108) AC_DEFINE([ASTERISK_CONF_1_8], [1], [Defined ASTERISK_CONF_1_8]);;
-								110) AC_DEFINE([ASTERISK_CONF_1_10], [1], [Defined ASTERISK_CONF_1_10]);;
-								111) AC_DEFINE([ASTERISK_CONF_1_11], [1], [Defined ASTERISK_CONF_1_11]);;
-								112) AC_DEFINE([ASTERISK_CONF_1_12], [1], [Defined ASTERISK_CONF_1_12]);;
-								113) AC_DEFINE([ASTERISK_CONF_1_13], [1], [Defined ASTERISK_CONF_1_13]);;
-								114) AC_DEFINE([ASTERISK_CONF_1_14], [1], [Defined ASTERISK_CONF_1_14]);;
-								115) AC_DEFINE([ASTERISK_CONF_1_15], [1], [Defined ASTERISK_CONF_1_15]);;
-								116) AC_DEFINE([ASTERISK_CONF_1_16], [1], [Defined ASTERISK_CONF_1_16]);;
-								117) AC_DEFINE([ASTERISK_CONF_1_17], [1], [Defined ASTERISK_CONF_1_17]);;
-								118) AC_DEFINE([ASTERISK_CONF_1_18], [1], [Defined ASTERISK_CONF_1_18]);;
-								119) AC_DEFINE([ASTERISK_CONF_1_19], [1], [Defined ASTERISK_CONF_1_19]);;
-			123) AC_DEFINE([ASTERISK_CONF_1_23], [1], [Defined ASTERISK_CONF_1_23]);;
-			122) AC_DEFINE([ASTERISK_CONF_1_22], [1], [Defined ASTERISK_CONF_1_22]);;
-			121) AC_DEFINE([ASTERISK_CONF_1_21], [1], [Defined ASTERISK_CONF_1_21]);;
-			120) AC_DEFINE([ASTERISK_CONF_1_20], [1], [Defined ASTERISK_CONF_1_20]);;
-								*)
-									AC_DEFINE([ASTERISK_CONF], [0], [NOT Defined ASTERISK_CONF !!])
-									ASTERISK_INCOMPATIBLE=yes;;
-							esac 
-
-							if [ test ${ASTERISK_VER_GROUP} -lt ${MIN_ASTERISK_VERSION} ]; then
-								echo ""
-								CONFIGURE_PART([Asterisk Version ${ASTERISK_VER} Not Supported])
-								echo ""
-								echo "This version of chan-sccp-b only has support for Asterisk 1.6.x and above."
-								echo ""
-								echo "Please install a higher version of asterisk"
-								echo ""
-								echo ""
-								exit 255
-							fi
-							if [ test ${ASTERISK_VER_GROUP} -gt ${MAX_ASTERISK_VERSION} ]; then
-								echo ""
-								CONFIGURE_PART([Asterisk Version ${ASTERISK_VER} Not Supported])
-								echo ""
-								echo "This version of chan-sccp-b only has support for Asterisk 1.12.x and below."
-								echo ""
-								echo "Please install a lower version of asterisk"
-								echo ""
-								echo ""
-								exit 255
-							fi
-						fi
-					fi 
-				done
-				if test $version_found == 0; then
-					echo ""
-					echo ""
-					echo "PBX branch version could not be determined"
-					echo "==================================="
-					echo "Either install asterisk and asterisk-devel packages using your package manager."
-					echo "If you compiled asterisk manually, make sure you also run `make install-headers` so chan-sccp can find them."
-					echo "Or specify the location where asterisk can be found, using ./configure --with-asterisk=[path]"
-					exit 255
-				fi
-			],[
-				AC_MSG_RESULT('ASTERISK_VERSION could not be established)
-			])
-		], [
+dnl Source 5: the header fingerprints. This is the oldest detection in the file; it used to sit
+dnl in the not-found branch of the autoconfig.h check, which never runs on any real install
+dnl (autoconfig.h is always there), so it never ran at all. Kept for what AMI_VERSION cannot
+dnl tell apart: asterisk 11 and older.
+AC_DEFUN([AST_VERSION_FROM_HEADER_FINGERPRINTS], [
+	AC_MSG_NOTICE([deciding the asterisk version by header fingerprints])
 			HEADER_INCLUDE="
 	#define HAVE_ARPA_INET_H 1
 	#define AST_MODULE_SELF_SYM __internal_chan_sccp_la_self
@@ -406,9 +379,103 @@ AC_DEFUN([AST_GET_VERSION], [
 			],[
 				AC_MSG_RESULT(['ASTERISK_VERSION could not be established'])
 			], [$HEADER_INCLUDE])
+])
+
+AC_DEFUN([AST_GET_VERSION], [
+	CONFIGURE_PART([Checking Asterisk Version:])
+	REALTIME_USEABLE=1
+	version_found=0
+	ast_ver_str=""
+	ast_ver_major=""
+	ast_ver_minor=""
+	ast_ver_patch=""
+
+	AC_ARG_WITH(asterisk_version,
+	AC_HELP_STRING([--with-asterisk-version[=PATH]], [specify the asterisk_version manually (fmt=major.minor)]), [ac_cv_use_asterisk_version="${withval}"], [ac_cv_use_asterisk_version="no"])
+	AS_IF([test "_${ac_cv_use_asterisk_version}" != "_no"], [
+		dnl Source 1: the manual override
+		ast_ver_str="${ac_cv_use_asterisk_version}"
+		AST_VERSION_PARSE
+		if test -z "${ast_ver_major}"; then
+			AC_MSG_ERROR([--with-asterisk-version='${ac_cv_use_asterisk_version}' does not look like major.minor])
+		fi
+		ASTERISK_REPOS_LOCATION=TRUNK
+		AST_VERSION_SET
+		AC_MSG_RESULT([Found 'Asterisk Version ${ASTERISK_VERSION_NUMBER}' (--with-asterisk-version).])
+	], [
+		dnl Source 2: PACKAGE_VERSION. asterisk/version.h + the ASTERISK_VERSION macro is how this
+		dnl used to be detected, but that header is a hard #error ("use asterisk/ast_version.h
+		dnl instead") on everything from 13 up, and ast_version.h only exposes the version via
+		dnl *functions* (ast_get_version()), not a preprocessor-time macro - so it can't be
+		dnl probed this compile+grep way at all. asterisk/autoconfig.h's PACKAGE_VERSION (a
+		dnl plain autotools convention) is the compile-time-visible replacement; it is the bare
+		dnl major ("23") where asterisk's configure.ac writes one, and "trunk" where it doesn't.
+		AC_CHECK_HEADER([asterisk/autoconfig.h],[
+			AC_MSG_CHECKING([version in asterisk/autoconfig.h])
+			AC_COMPILE_IFELSE(
+				[AC_LANG_PROGRAM(
+					[
+						#define AST_MODULE_SELF_SYM "__internal_chan_sccp_la_self"
+						#define AST_MODULE "chan_sccp"
+						#include <asterisk/autoconfig.h>
+					],[
+						const char *test_src = PACKAGE_VERSION;
+					]
+				)],[
+				# autoconfig.h is complex enough that gcc's preprocessor splits the
+				# `test_src = PACKAGE_VERSION;` assignment across two output lines
+				# with a `# <N> "file" 3 4` line-marker directive in between (this
+				# didn't happen with the old, much simpler asterisk/version.h).
+				# A single-line `grep test_src | grep -o` misses the value entirely
+				# since it ends up on the *next* line, not test_src's own line -
+				# discovered by testing on real preprocessor output on 2026-08-14,
+				# not assumed. Look 2 lines past the match, drop any line-marker
+				# lines (they start with '#' and would also match, wrongly, on the
+				# quoted source filename inside them), then extract the quoted value.
+				pbx_ver=$(eval "$ac_cpp conftest.$ac_ext" 2>/dev/null | $EGREP -A2 test_src | $EGREP -v '^#' | $EGREP -o '\".*\"')
+
+				# process tgz, branch, trunk
+				if echo $pbx_ver|grep -q "\"SVN-branch"; then
+					ASTERISK_REPOS_LOCATION=BRANCH
+				elif echo $pbx_ver|grep -q "\"SVN-trunk"; then
+					ASTERISK_REPOS_LOCATION=TRUNK
+				else
+					ASTERISK_REPOS_LOCATION=TGZ
+				fi
+				pbx_ver=`echo ${pbx_ver} | sed 's/"//g'`
+
+				ast_ver_str="${pbx_ver}"
+				AST_VERSION_PARSE
+				if test -n "${ast_ver_major}"; then
+					AST_VERSION_SET
+					AST_VERSION_CHECK_BOUNDS
+					AC_MSG_RESULT([Found 'Asterisk Version ${ASTERISK_VERSION_NUMBER}' (PACKAGE_VERSION '${pbx_ver}').])
+				else
+					AC_MSG_RESULT([PACKAGE_VERSION is '${pbx_ver}', which carries no version number])
+				fi
+			],[
+				AC_MSG_RESULT([asterisk/autoconfig.h does not compile, PACKAGE_VERSION cannot be read])
+			])
+		], [
+			AC_MSG_RESULT([asterisk/autoconfig.h not found])
 		])
+		dnl Sources 3-5, only when the headers themselves did not say. The AMI major comes
+		dnl first because it is read from the very headers being built against; the binary
+		dnl may only add the minor, and only when it agrees on the major.
+		if test ${version_found} = 0; then
+			AST_VERSION_AMI_MAJOR
+		fi
+		if test ${version_found} = 0 && test -n "${ast_ami_asterisk_major}"; then
+			AST_VERSION_FROM_BINARY
+		fi
+		if test ${version_found} = 0 && test -n "${ast_ami_asterisk_major}"; then
+			AST_VERSION_FROM_AMI
+		fi
+		if test ${version_found} = 0; then
+			AST_VERSION_FROM_HEADER_FINGERPRINTS
+		fi
 	])
-	
+
 	if test $version_found == 0; then
 		echo ""
 		echo ""
