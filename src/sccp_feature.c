@@ -1320,7 +1320,9 @@ int sccp_feat_sharedline_barge(constLineDevicePtr bargingLD, channelPtr bargedCh
 
 			// display prompt on Barged Device
 			snprintf(statusmsg, sizeof(statusmsg), SKINNY_DISP_BARGE " " SKINNY_DISP_FROM " %s", l->cid_num);
-			sccp_dev_set_message(d, statusmsg, SCCP_DISPLAYSTATUS_TIMEOUT, FALSE, FALSE);
+			/* to the phone being barged in on - d is the one doing the barging, and the
+			 * message used to go there, telling the barger that it was barged by itself */
+			sccp_dev_set_message(bargedLineDevice->device, statusmsg, SCCP_DISPLAYSTATUS_TIMEOUT, FALSE, FALSE);
 			bargedChannel->setTone(bargedChannel, SKINNY_TONE_ZIP, SKINNY_TONEDIRECTION_BOTH);
 
 			sccp_log(DEBUGCAT_FEATURE)(VERBOSE_PREFIX_2 "%s: is barged in on:%s\n", c->designator, bargedChannel->designator);

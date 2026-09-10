@@ -612,10 +612,14 @@ channelPtr sccp_pbx_hangup(constChannelPtr channel)
 
 		/* requesting statistics */
 		sccp_channel_StatisticsRequest(c);
-		sccp_channel_clean(c);
-		return c;								/* returning unretained so that sccp_wrapper_asterisk113_hangup can clear out the last reference */
 	}
-	return NULL;
+	/* The clean-up and the hand-back of the channel are not the device's business, and
+	 * they used to sit inside the if above. A channel with no device at hangup - one on
+	 * hold whose phone has since unregistered - was returned as NULL, so the reference
+	 * the wrapper took when it set tech_pvt was never released, and without the clean
+	 * its scheduled hangup kept a reference of its own. */
+	sccp_channel_clean(c);
+	return c;									/* returning unretained so that the wrapper's hangup can clear out the last reference */
 }
 
 /*!

@@ -949,34 +949,38 @@ static uint8_t sccp_addon_build_buttontemplate(constDevicePtr d, sccp_addon_t *a
 
 	sccp_log((DEBUGCAT_CONFIG + DEBUGCAT_BUTTONTEMPLATE + DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: Building button template %s(%d)\n", d->id, skinny_devicetype2str(type), type);
 
+	uint8_t count = 0;
 	switch (type) {
 		case SKINNY_DEVICETYPE_CISCO_ADDON_7914:
-			for (i = 0; i < 14; i++) {
-				btn[btn_index++].type = SCCP_BUTTONTYPE_MULTI;
-			}
+			count = 14;
 			break;
 		case SKINNY_DEVICETYPE_CISCO_ADDON_7915_12BUTTON:
 		case SKINNY_DEVICETYPE_CISCO_ADDON_7916_12BUTTON:
-			for (i = 0; i < 12; i++) {
-				btn[btn_index++].type = SCCP_BUTTONTYPE_MULTI;
-			}
+			count = 12;
 			break;
 		case SKINNY_DEVICETYPE_CISCO_ADDON_7915_24BUTTON:
 		case SKINNY_DEVICETYPE_CISCO_ADDON_7916_24BUTTON:
-			for (i = 0; i < 24; i++) {
-				btn[btn_index++].type = SCCP_BUTTONTYPE_MULTI;
-			}
+			count = 24;
 			break;
 		case SKINNY_DEVICETYPE_CISCO_ADDON_SPA500S:
 		case SKINNY_DEVICETYPE_CISCO_ADDON_SPA500DS:
 		case SKINNY_DEVICETYPE_CISCO_ADDON_SPA932DS:
-			for (i = 0; i < 32; i++) {
-				btn[btn_index++].type = SCCP_BUTTONTYPE_MULTI;
-			}
+			count = 32;
 			break;
 		default:
 			pbx_log(LOG_WARNING, "%s: Unknown addon device type '%d' found.\n", d->id, type);
 			break;
+	}
+	/* The template is StationMaxButtonTemplateSize entries, and the addons are not only
+	 * what sccp.conf lists: a phone announces its own in ExtensionDeviceCaps and each one
+	 * it announces is appended. Three 24-button modules on a 7975 asked for 80 slots of
+	 * the 56 there are, and the loops below wrote straight past the end of the buffer. */
+	if (count > StationMaxButtonTemplateSize - btn_index) {
+		pbx_log(LOG_WARNING, "%s: addon %s needs %d buttons but only %d template slots are left; the rest of it is not offered\n", d->id, skinny_devicetype2str(type), count, StationMaxButtonTemplateSize - btn_index);
+		count = StationMaxButtonTemplateSize - btn_index;
+	}
+	for (i = 0; i < count; i++) {
+		btn[btn_index++].type = SCCP_BUTTONTYPE_MULTI;
 	}
 	for (i = start_point; i < btn_index; i++) {
 		btn[i].devicetype = type;
@@ -2807,26 +2811,36 @@ boolean_t sccp_device_isVideoSupported(constDevicePtr device)
  * \return SCCP Service
  *
  */
-sccp_buttonconfig_t *sccp_dev_serviceURL_find_byindex(devicePtr device, uint16_t instance)
+boolean_t sccp_dev_serviceURL_find_byindex(devicePtr device, uint16_t instance, char * url, size_t urlsize, char * label, size_t labelsize)
 {
 	sccp_buttonconfig_t *config = NULL;
+	boolean_t found = FALSE;
 
-	if (!device || !device->session) {
-		return NULL;
+	if (!device || !device->session || !url || !label) {
+		return FALSE;
 	}
+	url[0] = '\0';
+	label[0] = '\0';
 	sccp_log((DEBUGCAT_DEVICE + DEBUGCAT_BUTTONTEMPLATE)) (VERBOSE_PREFIX_3 "%s: searching for service with instance %d\n", device->id, instance);
+	/* Copy what the caller needs while the list is locked, the way the speeddial lookup
+	 * does. This used to hand back a pointer into the list after unlocking it, and the
+	 * caller read the url and label from it with nothing holding the element: a
+	 * 'sccp reload' running at the same time frees exactly those strings. */
 	SCCP_LIST_LOCK(&device->buttonconfig);
 	SCCP_LIST_TRAVERSE(&device->buttonconfig, config, list) {
 		sccp_log_and((DEBUGCAT_DEVICE + DEBUGCAT_HIGH)) (VERBOSE_PREFIX_3 "%s: instance: %d buttontype: %d\n", device->id, config->instance, config->type);
 
 		if (config->type == SERVICE && config->instance == instance) {
 			sccp_log((DEBUGCAT_DEVICE + DEBUGCAT_BUTTONTEMPLATE)) (VERBOSE_PREFIX_3 "%s: found service: %s\n", device->id, config->label);
+			sccp_copy_string(url, config->button.service.url ? config->button.service.url : "", urlsize);
+			sccp_copy_string(label, config->label, labelsize);
+			found = TRUE;
 			break;
 		}
 	}
 	SCCP_LIST_UNLOCK(&device->buttonconfig);
 
-	return config;
+	return found;
 }
 
 /*!
@@ -3290,7 +3304,11 @@ void sccp_device_featureChangedDisplay(const sccp_event_t * event)
 			}
 			break;
 		case SCCP_FEATURE_MONITOR:
-			if (device->monitorFeature.status & (SCCP_FEATURE_MONITOR_STATE_REQUESTED | SCCP_FEATURE_MONITOR_STATE_ACTIVE)) {
+			/* The first test used to accept REQUESTED as well, which made the second branch
+			 * unreachable: a phone that pressed Record with no call up was told
+			 * "Recording" while nothing was being recorded. Recording is ACTIVE; a request
+			 * still waiting for a call is REQUESTED. */
+			if (device->monitorFeature.status & SCCP_FEATURE_MONITOR_STATE_ACTIVE) {
 				//sccp_device_addMessageToStack(device, SCCP_MESSAGE_PRIORITY_MONITOR, SKINNY_DISP_RECORDING);
 				sccp_dev_set_message(device, SKINNY_DISP_RECORDING, SCCP_DISPLAYSTATUS_TIMEOUT, FALSE, FALSE);
 			} else if (device->monitorFeature.status & SCCP_FEATURE_MONITOR_STATE_REQUESTED) {

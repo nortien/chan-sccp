@@ -4344,13 +4344,14 @@ void handle_feature_stat_req(constSessionPtr s, devicePtr d, constMessagePtr msg
 void handle_services_stat_req(constSessionPtr s, devicePtr d, constMessagePtr msg_in)
 {
 	sccp_msg_t * msg_out = NULL;
-	sccp_buttonconfig_t * config = NULL;
+	char url[StationMaxServiceURLSize] = "";
+	char label[SCCP_MAX_LABEL] = "";
 
 	int urlIndex = letohl(msg_in->data.ServiceURLStatReqMessage.lel_serviceURLIndex);
 
 	sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "%s: Got ServiceURL Status Request.  Index = %d\n", d->id, urlIndex);
 
-	if ((config = sccp_dev_serviceURL_find_byindex(d, urlIndex))) {
+	if (sccp_dev_serviceURL_find_byindex(d, urlIndex, url, sizeof(url), label, sizeof(label))) {
 		/* \todo move ServiceURLStatMessage impl to sccp_protocol.c */
 		if (d->inuseprotocolversion < 7) {
 			REQ(msg_out, ServiceURLStatMessage);
@@ -4358,12 +4359,11 @@ void handle_services_stat_req(constSessionPtr s, devicePtr d, constMessagePtr ms
 				return;
 			}
 			msg_out->data.ServiceURLStatMessage.lel_serviceURLIndex = htolel(urlIndex);
-			sccp_copy_string(msg_out->data.ServiceURLStatMessage.URL, config->button.service.url, sizeof(msg_out->data.ServiceURLStatMessage.URL));
-			//sccp_copy_string(msg_out->data.ServiceURLStatMessage.label, config->label, sccp_strlen(config->label) + 1);
-			d->copyStr2Locale(d, msg_out->data.ServiceURLStatMessage.label, config->label, sizeof(msg_out->data.ServiceURLStatMessage.label));
+			sccp_copy_string(msg_out->data.ServiceURLStatMessage.URL, url, sizeof(msg_out->data.ServiceURLStatMessage.URL));
+			d->copyStr2Locale(d, msg_out->data.ServiceURLStatMessage.label, label, sizeof(msg_out->data.ServiceURLStatMessage.label));
 		} else {
-			int URL_len = sccp_strlen(config->button.service.url);
-			int label_len = sccp_strlen(config->label);
+			int URL_len = sccp_strlen(url);
+			int label_len = sccp_strlen(label);
 			int dummy_len = URL_len + label_len;
 
 			int hdr_len = sizeof(msg_in->data.ServiceURLStatDynamicMessage) - 1;
@@ -4379,10 +4379,10 @@ void handle_services_stat_req(constSessionPtr s, devicePtr d, constMessagePtr ms
 
 				memset(&buffer[0], 0, dummy_len + 2);
 				if (URL_len) {
-					memcpy(&buffer[0], config->button.service.url, URL_len);
+					memcpy(&buffer[0], url, URL_len);
 				}
 				if (label_len) {
-					memcpy(&buffer[URL_len + 1], config->label, label_len);
+					memcpy(&buffer[URL_len + 1], label, label_len);
 				}
 				memcpy(&msg_out->data.ServiceURLStatDynamicMessage.dummy, &buffer[0], dummy_len + 2);
 			}
@@ -4853,6 +4853,16 @@ void handle_extension_devicecaps(constSessionPtr s, devicePtr d, constMessagePtr
 	
 	sccp_log(DEBUGCAT_ACTION + DEBUGCAT_DEVICE)(VERBOSE_PREFIX_3 "%s: extension/addon. instance:%d, type:%d, maxallowed:%d\n", d->id, instance, type, maxAllowed);
 	sccp_log(DEBUGCAT_ACTION + DEBUGCAT_DEVICE)(VERBOSE_PREFIX_3 "%s: extension/addon. text='%s'\n", d->id, text);
+	/* instance comes off the wire and every module announced past what sccp.conf lists
+	 * is appended to the device. The button template that is later built from the list
+	 * is bounded on its own now, but there is no reason to keep growing the list either:
+	 * the phone states how many modules it allows, and no supported phone takes more
+	 * than a handful. */
+#define SCCP_ADDONS_HARD_LIMIT 4
+	if (instance == 0 || instance > SCCP_ADDONS_HARD_LIMIT || (maxAllowed && instance > maxAllowed)) {
+		pbx_log(LOG_WARNING, "%s: ignoring extension module %d: the phone allows %d and the driver at most %d\n", d->id, instance, maxAllowed, SCCP_ADDONS_HARD_LIMIT);
+		return;
+	}
 	SCCP_LIST_LOCK(&d->addons);
 	if (SCCP_LIST_GETSIZE(&d->addons) < instance) {
 		pbx_log(LOG_NOTICE, "%s: sccp.conf device section is missing addon entry for extension module %d. Please add one.", d->id, instance);
