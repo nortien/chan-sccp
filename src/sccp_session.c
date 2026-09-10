@@ -1118,14 +1118,20 @@ static void * accept_thread(void * data)
 
 		if (!sccp_session_new_socket_allowed(&incoming)) {
 			context->transport->close_socket(&new_sc);
+			new_sc.fd = -1;
 			continue;
 		}
 
 		s = sccp_create_session(context, &new_sc);
 		if(s == NULL) {
 			context->transport->close_socket(&new_sc);
+			new_sc.fd = -1;
 			continue;
 		}
+		/* the session owns the socket from here on; forget it so the close after the loop
+		 * cannot close a live session's descriptor, or a number since reused by another */
+		new_sc.fd = -1;
+		new_sc.ssl = NULL;
 		memcpy(&s->sin, &incoming, sizeof(s->sin));
 		sccp_session_set_ourip(s);
 		sccp_session_addToGlobals(s);
@@ -1138,7 +1144,9 @@ static void * accept_thread(void * data)
 			sccp_session_release(&s);
 		}
 	}
-	context->transport->close_socket(&new_sc);
+	if (new_sc.fd > -1) {
+		context->transport->close_socket(&new_sc);
+	}
 	if(context->sc.fd > -1) {
 		sccp_log((DEBUGCAT_CORE))(VERBOSE_PREFIX_3 "Closing Listening Port:%d\n", context->sc.fd);
 		context->transport->close_socket(&context->sc);
@@ -1195,7 +1203,7 @@ boolean_t sccp_session_bind_and_listen(sccp_servercontext_t * context, struct so
 {
 	int result = FALSE;
 	// static struct sockaddr_storage boundaddr = {0};
-	static int port = -1;
+	int port = -1;												/* was static, shared between the TCP and TLS contexts for no reason */
 	char addrStr[INET6_ADDRSTRLEN];
 	sccp_copy_string(addrStr, sccp_netsock_stringify_addr(bindaddr), sizeof(addrStr));
 

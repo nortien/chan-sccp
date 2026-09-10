@@ -135,6 +135,7 @@ void sccp_threadpool_grow_locked(sccp_threadpool_t * tp_p, int amount)
 			 * pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL); */
 			SCCP_LIST_INSERT_HEAD(&(tp_p->threads), tp_thread, list);
 			pbx_pthread_create(&(tp_thread->thread), &attr, sccp_threadpool_thread_do, (void *) tp_thread);
+			pthread_attr_destroy(&attr);								/* paired with the init above, once per worker */
 			sccp_log((DEBUGCAT_CORE)) (VERBOSE_PREFIX_3 "Created thread %d(%p) in pool \n", t, (void *) tp_thread->thread);
 			pbx_cond_broadcast(&(tp_p->work));
 		}

@@ -125,11 +125,16 @@ static boolean_t configure_context(SSL_CTX * ctx)
 const sccp_transport_t * const tls_init(void)
 {
 	sccp_log(DEBUGCAT_SOCKET)(VERBOSE_PREFIX_1 "TLS Transport Initializing...\n");
+	InitializeSSL();											/* library init before the first SSL_CTX_new; it used to come after */
 	sslctx = create_context();
 	if (sslctx && configure_context(sslctx)) {
-		InitializeSSL();
 		return &tlstransport;
 	}
+	if (sslctx) {
+		SSL_CTX_free(sslctx);
+		sslctx = NULL;
+	}
+	DestroySSL();
 	return NULL;
 }
 
@@ -223,6 +228,10 @@ static int tls_close(sccp_socket_connection_t * sc)
 static const sccp_transport_t * const tls_destroy(uint8_t h)
 {
 	sccp_log(DEBUGCAT_SOCKET)(VERBOSE_PREFIX_1 "TLS Transport destroy...\n");
+	if (sslctx) {
+		SSL_CTX_free(sslctx);										/* was never freed: one context leaked per module load */
+		sslctx = NULL;
+	}
 	DestroySSL();
 	return NULL;
 }
