@@ -137,8 +137,11 @@ static uint convertPbxVar2XsltParams(PBX_VARIABLE_TYPE * pbx_params, const char 
 
 /* rework to easy unit testing, TO MUCH INTEGRATION */
 /* return allocated string */
-static boolean_t applyStyleSheet(xmlDoc * const doc, PBX_VARIABLE_TYPE * pbx_params)
+static boolean_t applyStyleSheet(xmlDoc ** doc, PBX_VARIABLE_TYPE * pbx_params)
 {
+	if (!doc || !*doc) {
+		return FALSE;
+	}
 	boolean_t    res        = FALSE;
 	const char * params[17] = { 0 };
 	uint         nbparams   = 0;
@@ -149,21 +152,23 @@ static boolean_t applyStyleSheet(xmlDoc * const doc, PBX_VARIABLE_TYPE * pbx_par
 	params[nbparams++] = "en";
 
 	/* process xinclude elements. */
-	if (xmlXIncludeProcess(doc) < 0) {
+	if (xmlXIncludeProcess(*doc) < 0) {
 		// xmlFreeDoc(doc);
 		return res;
 	}
 
-	xsltStylesheetPtr xslt = xsltLoadStylesheetPI(doc);
+	xsltStylesheetPtr xslt = xsltLoadStylesheetPI(*doc);
 	if (xslt) {
 		// xmlSubstituteEntitiesDefault(1);						/* coverity: CID 200164 (#1 of 1): unsafe_xml_parse_config (UNSAFE_XML_PARSE_CONFIG)unsafe_xml_parse_config: Passing 1 (value: 1)
 		// to xmlSubstituteEntitiesDefault(int) will allow entity substitution which can allow malicious entities to be substituted.*/
 		xmlLoadExtDtdDefaultValue = 1;
 		nbparams                  = convertPbxVar2XsltParams(pbx_params, params, nbparams);                                        // still needed ?
-		xmlDocPtr newdoc          = xsltApplyStylesheet(xslt, doc, params);
+		xmlDocPtr newdoc          = xsltApplyStylesheet(xslt, *doc, params);
 		if (newdoc) {                                        // switch xml doc with newdoc which got the stylesheet applied, free original xml doc
-			xmlFreeDoc(doc);
-			*(xmlDoc **)&doc = newdoc;
+			/* this used to write newdoc into the local copy of the pointer through a cast,
+			 * leaving the caller holding the document just freed */
+			xmlFreeDoc(*doc);
+			*doc = newdoc;
 			res              = TRUE;
 		}
 		xsltFreeStylesheet(xslt);
@@ -236,10 +241,12 @@ static void __attribute__((constructor)) init_xml(void)
 
 static void __attribute__((destructor)) destroy_xml(void)
 {
-	xsltCleanupGlobals();
-	xmlCleanupParser();
-	xmlMemoryDump();
-	xmlCleanupGlobals();
+	/* Nothing to tear down here. xmlCleanupParser, xmlCleanupGlobals and
+	 * xsltCleanupGlobals are process-global: libxml2 documents them as something only
+	 * the main program may call, once, at exit. Asterisk itself and other modules keep
+	 * using libxml2 after this module unloads, and calling them here pulled the
+	 * library's state out from under them. Per-document and per-stylesheet resources
+	 * are freed where they are made. */
 }
 
 /* Assign to interface */

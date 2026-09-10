@@ -662,6 +662,9 @@ static boolean_t xmlPostProcess(xmlDoc * const doc, const char * const uri, PBX_
 			*resultstr = iXML.dump(doc, TRUE);
 		}
 	}
+	if (!*resultstr) {
+		res = FALSE;										/* the caller formats it with %s */
+	}
 	return res;
 }
 
@@ -725,7 +728,7 @@ static boolean_t sccp_webservice_xmltest(const char * const uri, PBX_VARIABLE_TY
 		}
 	*/
 	char * resultstr = NULL;
-	if ((res |= xmlPostProcess(doc, uri, params, headers, &resultstr))) {
+	if ((res |= xmlPostProcess(doc, uri, params, headers, &resultstr)) && resultstr) {
 		// create a function for this
 		sccp_log(DEBUGCAT_WEBSERVICE)(VERBOSE_PREFIX_3 "resultstr: %s\n", resultstr);
 		pbx_str_append(result, 0, "%s", resultstr);
@@ -744,10 +747,14 @@ static void __attribute__((constructor)) init_webservice(void)
 	if (!running && parse_manager_conf() && parse_http_conf(baseURL)) {
 		SCCP_VECTOR_RW_INIT(&handlers, 1);
 
-		/* begin test */
+#if DEBUG
+		/* The two self-tests reflect request headers and parameters back to the
+		 * browser as they are, with no authentication: a debugging aid, and only
+		 * ever that. They used to be registered in every build that had the web
+		 * service compiled in. */
 		iWebService.addHandler("testhtml", sccp_webservice_htmltest, SCCP_XML_OUTPUTFMT_HTML);
 		iWebService.addHandler("testxml", sccp_webservice_xmltest, SCCP_XML_OUTPUTFMT_XML);
-		/* end test */
+#endif
 
 		ast_http_uri_link(&sccp_webservice_uri);
 		ast_http_uri_link(&sccp_webservice_xslt_uri);
