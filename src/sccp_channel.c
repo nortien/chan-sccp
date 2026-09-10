@@ -204,7 +204,7 @@ channelPtr sccp_channel_allocate(constLinePtr l, constDevicePtr device)
 	if (callCount < 0xFFFFFFFF) {						/* callcount limit should be reset at his upper limit :) */
 		callid = callCount++;
 	} else {
-		pbx_log(LOG_NOTICE, "%s: CallId re-starting at 00000001\n", device->id);
+		pbx_log(LOG_NOTICE, "%s: CallId re-starting at 00000001\n", DEV_ID_LOG(device));		/* device may be NULL here */
 		callCount = 1;
 		callid = callCount;
 	}
@@ -3078,10 +3078,11 @@ boolean_t sccp_channel_setVideoMode(channelPtr c, const char *data)
 	boolean_t res = FALSE;
 #if CS_SCCP_VIDEO
 	if (c) {
-		sccp_video_mode_t newval = c->videomode = sccp_video_mode_str2val(data);
+		sccp_video_mode_t newval = sccp_video_mode_str2val(data);
 		if (newval == SCCP_VIDEO_MODE_SENTINEL) {
-			return res;
+			return res;									/* an unknown mode string used to be stored before this check */
 		}
+		c->videomode = newval;
 		sccp_rtp_t * video = (sccp_rtp_t *)&(c->rtp.video);
 		sccp_log((DEBUGCAT_CHANNEL | DEBUGCAT_RTP))(VERBOSE_PREFIX_2 "%s: (setVideoMode) Setting Video Mode to %s\n", c->designator, sccp_video_mode2str(newval));
 		if (c->state >= SCCP_GROUPED_CHANNELSTATE_SETUP && newval == SCCP_VIDEO_MODE_AUTO && !c->isHangingUp) {
