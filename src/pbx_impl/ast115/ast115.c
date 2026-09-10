@@ -1149,7 +1149,8 @@ static boolean_t sccp_astwrap_setWriteFormat(constChannelPtr channel, skinny_cod
 		ast_rtp_instance_set_write_format(channel->rtp.audio.instance, ast_format);
 	}
 	ast_channel_set_writeformat(channel->owner, ast_format);
-	ao2_ref(ast_format, -1);
+	/* no ao2_ref(-1): skinny2ast_format hands back asterisk's global format object, not a
+	 * reference of ours; releasing it here drained the global's count */
 	return TRUE;
 }
 
@@ -1170,7 +1171,8 @@ static boolean_t sccp_astwrap_setReadFormat(constChannelPtr channel, skinny_code
 		ast_rtp_instance_set_read_format(channel->rtp.audio.instance, ast_format);
 	}
 	ast_channel_set_readformat(channel->owner, ast_format);
-	ao2_ref(ast_format, -1);
+	/* no ao2_ref(-1): skinny2ast_format hands back asterisk's global format object, not a
+	 * reference of ours; releasing it here drained the global's count */
 	return TRUE;
 }
 
@@ -1452,6 +1454,7 @@ static boolean_t sccp_astwrap_allocTempPBXChannel(PBX_CHANNEL_TYPE * pbxSrcChann
 	pbxDstChannel = ast_channel_alloc(0, AST_STATE_DOWN, 0, 0, ast_channel_accountcode(pbxSrcChannel), pbx_channel_exten(pbxSrcChannel), pbx_channel_context(pbxSrcChannel), &assignedids, pbxSrcChannel, ast_channel_amaflags(pbxSrcChannel), "%s-TMP", ast_channel_name(pbxSrcChannel));
 	if (pbxDstChannel == NULL) {
 		pbx_log(LOG_ERROR, "SCCP: (allocTempPBXChannel) ast_channel_alloc failed\n");
+		ast_channel_unlock(pbxSrcChannel);					/* taken just above; this path left it held */
 		ao2_cleanup(caps);
 		return FALSE;
 	}
@@ -1641,6 +1644,14 @@ static void * parking_subscriptionCleanup (void * data)
  * \todo copy connected line info
  *
  */
+/* Whether anything is registered to park a call into. The parking module can be absent,
+ * or present and declining to load for want of a configuration; in both states every park
+ * attempt fails, and a phone should not be offered the key in the first place. */
+static boolean_t sccp_astwrap_parkingAvailable(void)
+{
+	return ast_parking_provider_registered() ? TRUE : FALSE;
+}
+
 static sccp_parkresult_t sccp_astwrap_park(constChannelPtr hostChannel)
 {
 	sccp_parkresult_t res = PARK_RESULT_FAIL;
@@ -1943,7 +1954,7 @@ static PBX_CHANNEL_TYPE *sccp_astwrap_request(const char *type, struct ast_forma
 #ifdef CS_SCCP_VIDEO
 	memset(&channel->remoteCapabilities.video, 0, sizeof(channel->remoteCapabilities.video));
 	if (videoCapabilities[0] != SKINNY_CODEC_NONE) {
-		memcpy(channel->remoteCapabilities.video, videoCapabilities, ARRAY_LEN(videoCapabilities));
+		memcpy(channel->remoteCapabilities.video, videoCapabilities, sizeof(channel->remoteCapabilities.video));	/* ARRAY_LEN copied a fraction of the array */
 	} else if (video_codec) {
 		channel->remoteCapabilities.video[0] = video_codec;
 	}
@@ -2477,7 +2488,7 @@ static int sccp_astwrap_callerid_number(PBX_CHANNEL_TYPE *pbx_chan, char **cid_n
 static int sccp_astwrap_callerid_ton(PBX_CHANNEL_TYPE *pbx_chan, int *cid_ton)
 {
 	if (pbx_chan && ast_channel_caller(pbx_chan)->id.number.valid) {
-		*cid_ton = ast_channel_caller(pbx_chan)->ani.number.plan;
+		*cid_ton = ast_channel_caller(pbx_chan)->id.number.plan;		/* the plan of the number whose validity was just tested, not the ANI's */
 		return *cid_ton;
 	}
 	return 0;
@@ -2700,9 +2711,7 @@ static boolean_t sccp_astwrap_getChannelByName(const char *name, PBX_CHANNEL_TYP
 	if (!ast) {
 		return FALSE;
 	}
-	pbx_channel_lock(ast);
-	*pbx_channel = pbx_channel_ref(ast);
-	pbx_channel_unlock(ast);
+	*pbx_channel = ast;							/* transfer the reference from ast_channel_get_by_name; a second ref here leaked the channel */
 	return TRUE;
 }
 
@@ -3144,7 +3153,7 @@ static int sccp_pbx_sendHTML(PBX_CHANNEL_TYPE * ast, int subclass, const char *d
 			} else {
 				fr.subclass.integer = AST_HTML_NOSUPPORT;
 			}
-			ast_queue_frame(ast, ast_frisolate(&fr));
+			ast_queue_frame(ast, &fr);					/* ast_queue_frame copies the frame; the ast_frisolate copy it used to be given was never freed */
 			res = 0;
 		}
 	}
@@ -3634,6 +3643,7 @@ const PbxInterface iPbx = {
 	feature_monitor: sccp_astgenwrap_featureMonitor,
 
 	feature_park: sccp_astwrap_park,
+	feature_parkingAvailable: sccp_astwrap_parkingAvailable,
 	getFeatureExtension: sccp_astwrap_getFeatureExtension,
 	getPickupExtension: sccp_astwrap_getPickupExtension,
 
@@ -3785,6 +3795,7 @@ const PbxInterface iPbx = {
 	.feature_monitor = sccp_astgenwrap_featureMonitor,
 
 	.feature_park = sccp_astwrap_park,
+	.feature_parkingAvailable = sccp_astwrap_parkingAvailable,
 	.getFeatureExtension = sccp_astwrap_getFeatureExtension,
 	.getPickupExtension = sccp_astwrap_getPickupExtension,
 

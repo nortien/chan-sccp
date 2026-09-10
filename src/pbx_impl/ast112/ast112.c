@@ -1601,7 +1601,7 @@ static PBX_CHANNEL_TYPE *sccp_astwrap_request(const char *type, struct ast_forma
 #ifdef CS_SCCP_VIDEO
 	memset(&channel->remoteCapabilities.video, 0, sizeof(channel->remoteCapabilities.video));
 	if (videoCapabilities[0] != SKINNY_CODEC_NONE) {
-		memcpy(channel->remoteCapabilities.video, videoCapabilities, ARRAY_LEN(videoCapabilities));
+		memcpy(channel->remoteCapabilities.video, videoCapabilities, sizeof(channel->remoteCapabilities.video));	/* ARRAY_LEN copied a fraction of the array */
 	}
 #endif
 
