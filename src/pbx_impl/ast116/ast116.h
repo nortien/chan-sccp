@@ -222,7 +222,16 @@ int pbx_manager_register(const char *action, int authority, int (*func) (struct 
 		if ((_EVENTLIST) == TRUE) {									\
 			astman_send_listack(s, m, AMI_COMMAND " list will follow", "start");			\
 		}												\
-		if (RESULT_SUCCESS==_CALLED_FUNCTION(-1, &totals, s, m, ARRAY_LEN(arguments), arguments)) {	\
+		/* astman_get_header returns "" for a header that is not there, and argc used	\
+		 * to be the full array length regardless, so an action could never tell an	\
+		 * omitted optional parameter from a present one: SCCPDndDevice without State	\
+		 * always failed although the documentation says it cycles. Trim the empty	\
+		 * tail so argc means what it means on the CLI - how many words were given. */	\
+		int argc = i;											\
+		while (argc > 0 && pbx_strlen_zero(arguments[argc - 1])) {					\
+			argc--;											\
+		}												\
+		if (RESULT_SUCCESS==_CALLED_FUNCTION(-1, &totals, s, m, argc, arguments)) {			\
 			if ((_EVENTLIST) == TRUE) {								\
 				astman_append(s,								\
 				"Event: " AMI_COMMAND "Complete\r\n"						\

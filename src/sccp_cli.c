@@ -2926,6 +2926,8 @@ static int sccp_add_line_to_device(int fd, int argc, char *argv[])
 		AUTO_RELEASE(sccp_line_t, l , sccp_line_find_byname(argv[4], FALSE));
 		if (!l) {
 			pbx_log(LOG_ERROR, "Error: Line %s not found\n", argv[4]);
+			pbx_cli(fd, "Line %s not found\n", argv[4]);
+			return RESULT_FAILURE;									/* used to fall through and dereference the NULL */
 		}
  		sccp_device_setPendingUpdate(d, 1);
 		if (sccp_config_addButton(&d->buttonconfig, -1, LINE, l->name, NULL, NULL) == SCCP_CONFIG_CHANGE_CHANGED) {
@@ -3072,6 +3074,12 @@ static int sccp_cli_reload(int fd, int argc, char *argv[])
 					utype = pbx_variable_retrieve(GLOB(cfg), argv[3], "type");
 					if (utype && !strcasecmp(utype, "device")) {
 						device = sccp_device_create(argv[3]) /*ref_replace*/;
+						/* the same step the config loader takes after creating one;
+						 * without it the device lived only until the reference below
+						 * was released, and the command reported success */
+						if (device) {
+							sccp_device_addToGlobals(device);
+						}
 					} else {
 						pbx_cli(fd, "Could not find device %s in config\n", argv[3]);
 						goto EXIT;
@@ -3131,6 +3139,9 @@ static int sccp_cli_reload(int fd, int argc, char *argv[])
 					utype = pbx_variable_retrieve(GLOB(cfg), argv[3], "type");
 					if (utype && !strcasecmp(utype, "line")) {
 						line = sccp_line_create(argv[3]) /*ref_replace*/;
+						if (line) {
+							sccp_line_addToGlobals(line);					/* see the device case above */
+						}
 					} else {
 						pbx_cli(fd, "Could not find line %s in config\n", argv[3]);
 						goto EXIT;
@@ -3177,8 +3188,10 @@ static int sccp_cli_reload(int fd, int argc, char *argv[])
 #endif
 								{
 									if (GLOB(cfg)) {
-										v = ast_variable_browse(GLOB(cfg), device->id);
-										change |= sccp_config_applyDeviceConfiguration(device, v);
+										/* its own variable: reusing v here overwrote the
+										 * line's list, which is destroyed at the end */
+										PBX_VARIABLE_TYPE * cv = ast_variable_browse(GLOB(cfg), device->id);
+										change |= sccp_config_applyDeviceConfiguration(device, cv);
 									}
 								}
 								sccp_device_setPendingUpdate(device, 1);
@@ -4177,6 +4190,10 @@ int sccp_register_cli(void)
 #else
 #define _MAN_COM_FLAGS	(EVENT_FLAG_SYSTEM | EVENT_FLAG_COMMAND)
 #define _MAN_REP_FLAGS	(EVENT_FLAG_SYSTEM | EVENT_FLAG_CONFIG | EVENT_FLAG_REPORTING)
+/* Anything that changes what a phone does - sends it text, answers or forwards its calls,
+ * sets DND, mutes it, pulls it over with a token - is a command, and is registered with
+ * the command class below. Every action used to be registered as reporting, so an AMI
+ * account with write=reporting could do all of that. */
 #endif
 	res |= pbx_manager_register("SCCPShowGlobals", _MAN_REP_FLAGS, manager_show_globals, "show globals setting", ami_globals_usage);
 	res |= pbx_manager_register("SCCPShowDevices", _MAN_REP_FLAGS, manager_show_devices, "show devices", ami_devices_usage);
@@ -4187,23 +4204,23 @@ int sccp_register_cli(void)
 	res |= pbx_manager_register("SCCPShowSessions", _MAN_REP_FLAGS, manager_show_sessions, "show sessions", ami_sessions_usage);
 	res |= pbx_manager_register("SCCPShowMWISubscriptions", _MAN_REP_FLAGS, manager_show_mwi_subscriptions, "show mwi subscriptions", ami_mwi_subscriptions_usage);
 	res |= pbx_manager_register("SCCPShowSoftkeySets", _MAN_REP_FLAGS, manager_show_softkeysets, "show softkey sets", ami_show_softkeysets_usage);
-	res |= pbx_manager_register("SCCPMessageDevices", _MAN_REP_FLAGS, manager_message_devices, "message devices", ami_message_devices_usage);
-	res |= pbx_manager_register("SCCPMessageDevice", _MAN_REP_FLAGS, manager_message_device, "message device", ami_message_device_usage);
-	res |= pbx_manager_register("SCCPMicrophone", _MAN_REP_FLAGS, manager_microphone, "Control Microphone on/off on active call", ami_microphone_usage);
+	res |= pbx_manager_register("SCCPMessageDevices", _MAN_COM_FLAGS, manager_message_devices, "message devices", ami_message_devices_usage);
+	res |= pbx_manager_register("SCCPMessageDevice", _MAN_COM_FLAGS, manager_message_device, "message device", ami_message_device_usage);
+	res |= pbx_manager_register("SCCPMicrophone", _MAN_COM_FLAGS, manager_microphone, "Control Microphone on/off on active call", ami_microphone_usage);
 #ifdef CS_SCCP_CONFERENCE
 	res |= pbx_manager_register("SCCPShowConferences", _MAN_REP_FLAGS, manager_show_conferences, "show conferences", ami_conferences_usage);
 	res |= pbx_manager_register("SCCPShowConference", _MAN_REP_FLAGS, manager_show_conference, "show conference", ami_conference_usage);
-	res |= pbx_manager_register("SCCPConference", _MAN_REP_FLAGS, manager_conference_command, "conference commands", ami_conference_command_usage);
+	res |= pbx_manager_register("SCCPConference", _MAN_COM_FLAGS, manager_conference_command, "conference commands", ami_conference_command_usage);
 #endif
 	res |= pbx_manager_register("SCCPShowHintLineStates", _MAN_REP_FLAGS, manager_show_hint_lineStates, "show hint lineStates", ami_show_hint_lineStates_usage);
 	res |= pbx_manager_register("SCCPShowHintSubscriptions", _MAN_REP_FLAGS, manager_show_hint_subscriptions, "show hint subscriptions", ami_show_hint_subscriptions_usage);
 	res |= pbx_manager_register("SCCPShowRefcount", _MAN_REP_FLAGS, manager_show_refcount, "show refcount", ami_show_refcount_usage);
 
-	res |= iPbx.register_manager(answerCall1_command, _MAN_REP_FLAGS, manager_answercall, NULL, NULL);
-	res |= iPbx.register_manager(callForward_command, _MAN_REP_FLAGS, manager_callforward, NULL, NULL);
-	res |= iPbx.register_manager(dndDevice_command, _MAN_REP_FLAGS, manager_dnd_device, NULL, NULL);
-	res |= iPbx.register_manager(systemMessage_command, _MAN_REP_FLAGS, manager_system_message, NULL, NULL);
-	res |= iPbx.register_manager(tokenAck_command, _MAN_REP_FLAGS, manager_tokenack, NULL, NULL);
+	res |= iPbx.register_manager(answerCall1_command, _MAN_COM_FLAGS, manager_answercall, NULL, NULL);
+	res |= iPbx.register_manager(callForward_command, _MAN_COM_FLAGS, manager_callforward, NULL, NULL);
+	res |= iPbx.register_manager(dndDevice_command, _MAN_COM_FLAGS, manager_dnd_device, NULL, NULL);
+	res |= iPbx.register_manager(systemMessage_command, _MAN_COM_FLAGS, manager_system_message, NULL, NULL);
+	res |= iPbx.register_manager(tokenAck_command, _MAN_COM_FLAGS, manager_tokenack, NULL, NULL);
 	return res;
 }
 
