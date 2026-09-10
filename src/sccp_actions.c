@@ -1662,7 +1662,7 @@ void handle_line_number(constSessionPtr s, devicePtr d, constMessagePtr msg_in)
 		fullyQualifiedDisplayName = dirNumber = k.name;
 	}
 
-	char displayName[SCCP_MAX_LABEL + 1];
+	char displayName[SCCP_MAX_LABEL + 1] = "";						/* not every branch below writes it */
 	if (l) {
 		SCCP_LIST_LOCK(&d->buttonconfig);
 		SCCP_LIST_TRAVERSE(&d->buttonconfig, config, list) {
@@ -3054,7 +3054,7 @@ void handle_soft_key_set_req(constSessionPtr s, devicePtr d, constMessagePtr msg
 				cp++;
 				continue;
 			}
-			for (j = 0; j < sizeof(softkeysmap); j++) {
+			for (j = 0; j < ARRAY_LEN(softkeysmap); j++) {
 				if (b[c] == softkeysmap[j]) {
 					ast_str_append(&outputStr, buffersize, "%-2d:%-9s|", cp, label2str(softkeysmap[j]));
 					msg_out->data.SoftKeySetResMessage.definition[v->id].softKeyTemplateIndex[cp] = (j + 1);
@@ -3915,7 +3915,9 @@ void handle_startMultiMediaTransmissionAck(constSessionPtr s, devicePtr d, const
  */
 void handle_mediaTransmissionFailure(constSessionPtr s, devicePtr d, constMessagePtr msg_in)
 {
-	sccp_dump_msg(msg_in);
+	if ((GLOB(debug) & DEBUGCAT_MESSAGE) != 0) {									// the other dumps in this file are gated the same way
+		sccp_dump_msg(msg_in);
+	}
 	/*
 
 	struct sockaddr_storage ss = { 0 };
@@ -4544,7 +4546,8 @@ void handle_updatecapabilities_message(constSessionPtr s, devicePtr d, constMess
 
 		uint8_t video_customPictureFormats = 0;
 		video_customPictureFormats = letohl(msg_in->data.UpdateCapabilitiesMessage.v3.lel_customPictureFormatCount);
-		for (video_customPictureFormat = 0; video_customPictureFormat < video_customPictureFormats; video_customPictureFormat++) {
+		/* the count is the phone's; the array is MAX_CUSTOM_PICTURES long */
+		for (video_customPictureFormat = 0; video_customPictureFormat < video_customPictureFormats && video_customPictureFormat < MAX_CUSTOM_PICTURES; video_customPictureFormat++) {
 			int width = letohl(msg_in->data.UpdateCapabilitiesMessage.v3.customPictureFormat[video_customPictureFormat].lel_width);
 			int height = letohl(msg_in->data.UpdateCapabilitiesMessage.v3.customPictureFormat[video_customPictureFormat].lel_height);
 			int pixelAspectRatio = letohl(msg_in->data.UpdateCapabilitiesMessage.v3.customPictureFormat[video_customPictureFormat].lel_pixelAspectRatio);
@@ -4761,7 +4764,7 @@ void handle_updatecapabilities_V3_message(constSessionPtr s, devicePtr d, constM
 
 #ifdef CS_SCCP_VIDEO
 #if DEBUG
-	uint8_t video_customPictureFormats = letohl(msg_in->data.UpdateCapabilitiesV2Message.lel_customPictureFormatCount);
+	uint8_t video_customPictureFormats = letohl(msg_in->data.UpdateCapabilitiesV3Message.lel_customPictureFormatCount);	/* the V3 count for the V3 array; it read the V2 member */
 	handle_updatecapabilities_dissect_customPictureFormat(d, video_customPictureFormats, msg_in->data.UpdateCapabilitiesV3Message.customPictureFormat);
 #endif
 

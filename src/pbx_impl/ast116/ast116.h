@@ -206,7 +206,9 @@ int pbx_manager_register(const char *action, int authority, int (*func) (struct 
 	{													\
 		const char *id = astman_get_header(m, "ActionID");						\
 		static char *cli_ami_params[] = { CLI_COMMAND, CLI_AMI_PARAMS };				\
-		static char *arguments[ARRAY_LEN(cli_ami_params)];						\
+		/* per call, not static: two AMI sessions running the same action at once	\
+		 * were filling one shared array */								\
+		char *arguments[ARRAY_LEN(cli_ami_params)] = { 0 };						\
 		uint8_t x = 0, i = 0; 										\
 		for (x=0; x < ARRAY_LEN(cli_ami_params); x++) {							\
 			if(NULL != cli_ami_params[x] && strlen(cli_ami_params[x]) > 0){				\
@@ -281,7 +283,7 @@ int pbx_manager_register(const char *action, int authority, int (*func) (struct 
                         m.hdrcount++;                                        					\
                 }												\
                 int result = (_CALLED_FUNCTION)(a->fd, NULL, NULL, &m, a->argc, (char **) a->argv);		\
-		for(int x = 0; (int)ARRAY_LEN(cli_ami_params) && x < a->argc; x++) { 				\
+		for(int x = 0; x < (int)ARRAY_LEN(cli_ami_params) && x < a->argc; x++) { 			\
 			sccp_free(m.headers[x]);								\
 		}												\
 		switch (result) {										\

@@ -561,7 +561,11 @@ static void __find_joint_capabilities(sccp_channel_t *c, PBX_CHANNEL_TYPE* peer,
 					c->designator, best_fmt_cap ? ast_format_get_codec_name(best_fmt_cap) : "<none>", best_fmt_native ? ast_format_get_codec_name(best_fmt_native) : "<none>");
 			}
 
+			/* the native formats are written under the channel lock elsewhere in this
+			 * file; read them under it too */
+			ast_channel_lock(c->owner);
 			ast_format_cap_append_from_cap(caps, ast_channel_nativeformats(c->owner), AST_MEDIA_TYPE_UNKNOWN);
+			ast_channel_unlock(c->owner);
 			if (best_fmt_native) {
 				if (best_fmt_native != ast_format_none) {
 					if (!ast_format_cap_empty(caps)) {
@@ -3101,7 +3105,7 @@ static int sccp_astwrap_setOption(PBX_CHANNEL_TYPE * ast, int option, void *data
 static void sccp_astwrap_set_pbxchannel_linkedid(PBX_CHANNEL_TYPE * pbx_channel, const char *new_linkedid)
 {
 	if (pbx_channel) {
-		if (!strcmp(ast_channel_linkedid(pbx_channel), new_linkedid)) {
+		if (!new_linkedid || !strcmp(ast_channel_linkedid(pbx_channel), new_linkedid)) {
 			return;
 		}
 		// ast_cel_check_retire_linkedid(pbx_channel);
