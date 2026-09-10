@@ -799,7 +799,7 @@ static int sccp_show_globals(int fd, sccp_cli_totals_t *totals, struct mansessio
 #endif
 	CLI_AMI_OUTPUT_BOOL("DND Feature enabled", CLI_AMI_LIST_WIDTH, GLOB(dndFeature));
 #ifdef CS_SCCP_PARK
-	CLI_AMI_OUTPUT_BOOL("Park", CLI_AMI_LIST_WIDTH, FALSE);
+	CLI_AMI_OUTPUT_BOOL("Park", CLI_AMI_LIST_WIDTH, TRUE);								/* both arms printed FALSE, so a build with park support reported 'Park: off' */
 #else
 	CLI_AMI_OUTPUT_BOOL("Park", CLI_AMI_LIST_WIDTH, FALSE);
 #endif

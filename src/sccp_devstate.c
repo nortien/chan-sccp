@@ -49,15 +49,16 @@ struct deviceState {
 };
 static SCCP_LIST_HEAD(, struct deviceState) deviceStates;
 
-void deviceRegisterListener(const sccp_event_t * event);
-deviceState_t * createDeviceStateHandler(const char * devstate);
-deviceState_t * getDeviceStateHandler(const char * devstate);
+/* file-local helpers; they were exported for no reason and 'changed_cb' is a generic name to leak into a loadable module's symbol table */
+static void deviceRegisterListener(const sccp_event_t * event);
+static deviceState_t * createDeviceStateHandler(const char * devstate);
+static deviceState_t * getDeviceStateHandler(const char * devstate);
 #	if ASTERISK_VERSION_GROUP >= 112
-void changed_cb(void * data, struct stasis_subscription * sub, struct stasis_message * msg);
+static void changed_cb(void * data, struct stasis_subscription * sub, struct stasis_message * msg);
 #	else
-void changed_cb(const struct ast_event * ast_event, void * data);
+static void changed_cb(const struct ast_event * ast_event, void * data);
 #	endif
-void notifySubscriber(deviceState_t * deviceState, const SubscribingDevice_t * subscriber);
+static void notifySubscriber(deviceState_t * deviceState, const SubscribingDevice_t * subscriber);
 
 const char devstate_db_family[] = "CustomDevstate";
 #	define ASTDB_RESULT_LEN 80
@@ -250,7 +251,7 @@ static void deviceUnRegistered(const sccp_device_t * device)
 	}
 }
 
-void deviceRegisterListener(const sccp_event_t * event)
+static void deviceRegisterListener(const sccp_event_t * event)
 {
 	sccp_device_t *device = NULL;
 
@@ -273,7 +274,7 @@ void deviceRegisterListener(const sccp_event_t * event)
 	}
 }
 
-deviceState_t * __PURE__ getDeviceStateHandler(const char * devstate)
+static deviceState_t * __PURE__ getDeviceStateHandler(const char * devstate)
 {
 	if (!devstate) {
 		return NULL;
@@ -289,7 +290,7 @@ deviceState_t * __PURE__ getDeviceStateHandler(const char * devstate)
 	return deviceState;
 }
 
-deviceState_t * createDeviceStateHandler(const char * devstate)
+static deviceState_t * createDeviceStateHandler(const char * devstate)
 {
 	if (!devstate) {
 		return NULL;
@@ -354,7 +355,7 @@ enum ast_device_state sccp_devstate_getNextDeviceState(constDevicePtr d, sccp_bu
 	return nextstate;
 }
 
-void notifySubscriber(deviceState_t * deviceState, const SubscribingDevice_t * subscriber)
+static void notifySubscriber(deviceState_t * deviceState, const SubscribingDevice_t * subscriber)
 {
 	pbx_assert(subscriber != NULL && subscriber->device != NULL);
 	sccp_msg_t *msg = NULL;
@@ -385,9 +386,9 @@ void notifySubscriber(deviceState_t * deviceState, const SubscribingDevice_t * s
 
 // void changed_cb(const struct ast_event *ast_event, void *data)
 #	if ASTERISK_VERSION_GROUP >= 112
-void changed_cb(void * data, struct stasis_subscription * sub, struct stasis_message * msg)
+static void changed_cb(void * data, struct stasis_subscription * sub, struct stasis_message * msg)
 #	else
-void changed_cb(const struct ast_event * ast_event, void * data)
+static void changed_cb(const struct ast_event * ast_event, void * data)
 #	endif
 {
 	deviceState_t * deviceState = (deviceState_t *)data;

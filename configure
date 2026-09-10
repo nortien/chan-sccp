@@ -27195,7 +27195,7 @@ done
 "
 	SANITIZE_CFLAGS=""
 	SANITIZE_LDFLAGS=""
-	MWI_USE_EVENTS=0
+	MWI_USE_EVENT=0		# was MWI_USE_EVENTS (with an S): the AS_IF at the end of this macro reads MWI_USE_EVENT, so with neither ast_event nor stasis found the test ran on an empty variable
 	ac_fn_c_check_header_compile "$LINENO" "asterisk.h" "ac_cv_header_asterisk_h" "$ac_includes_default"
 if test "x$ac_cv_header_asterisk_h" = xyes
 then :

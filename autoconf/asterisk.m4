@@ -522,7 +522,7 @@ dnl 	CFLAGS="${CFLAGS_saved} -Werror=implicit-function-declaration"
 "
 	SANITIZE_CFLAGS=""
 	SANITIZE_LDFLAGS=""
-	MWI_USE_EVENTS=0
+	MWI_USE_EVENT=0		# was MWI_USE_EVENTS (with an S): the AS_IF at the end of this macro reads MWI_USE_EVENT, so with neither ast_event nor stasis found the test ran on an empty variable
 	AC_CHECK_HEADER([asterisk.h],
 		AC_MSG_CHECKING([ - if asterisk provides ast_register_file_version...])
 		AC_EGREP_CPP([ast_register_file_version], [
