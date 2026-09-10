@@ -1186,17 +1186,46 @@ boolean_t sccp_SoftkeyMap_execCallbackByEvent(devicePtr d, linePtr l, uint32_t l
 /*!
  * \brief Enable or Disable one softkey on a specific softKeySet
  */
+/*!
+ * \brief The keys of one softKeySet as the phone has them, and how many
+ * \note The mask in SelectSoftKeys is positional: bit n is the key in position n of the
+ *       set the phone was sent. handle_soft_key_set_req leaves out the keys a device is
+ *       not offered and packs the rest up, so a key's position on the phone is not its
+ *       position in the configured list, and numbering the bits against the
+ *       configuration puts each state on the wrong key. Use the transmitted layout it
+ *       records. Before it has run there is nothing to send a mask to yet, so falling
+ *       back on the configured order is harmless and keeps the lookup total.
+ */
+static const uint8_t * sccp_softkey_getTransmittedKeys(constDevicePtr device, const skinny_keymode_t softKeySet, uint8_t * const count)
+{
+	*count = 0;
+	if(!device || !device->softKeyConfiguration.size || !device->softKeyConfiguration.modes) {
+		return NULL;
+	}
+	if(softKeySet >= ARRAY_LEN(device->softKeyConfiguration.transmittedCount)) {
+		return NULL;
+	}
+	if(device->softKeyConfiguration.transmittedCount[softKeySet]) {
+		*count = device->softKeyConfiguration.transmittedCount[softKeySet];
+		return device->softKeyConfiguration.transmitted[softKeySet];
+	}
+	*count = device->softKeyConfiguration.modes[softKeySet].count;
+	return device->softKeyConfiguration.modes[softKeySet].ptr;
+}
+
 void sccp_softkey_setSoftkeyState(devicePtr device, skinny_keymode_t softKeySet, uint8_t softKey, boolean_t enable)
 {
-	if (!device || !device->softKeyConfiguration.size) {
+	uint8_t count = 0;
+	const uint8_t * keys = sccp_softkey_getTransmittedKeys(device, softKeySet, &count);
+	if(!keys) {
 		return;
 	}
 
 	sccp_log((DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_3 "%s: softkey '%s' on %s to %s\n", DEV_ID_LOG(device), label2str(softKey), skinny_keymode2str(softKeySet), enable ? "on" : "off");
 	/* find softkey */
-	for(uint8_t i = 0; i < device->softKeyConfiguration.modes[softKeySet].count; i++) {
-		if (device->softKeyConfiguration.modes[softKeySet].ptr && device->softKeyConfiguration.modes[softKeySet].ptr[i] == softKey) {
-			sccp_log((DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_4 "%s: found softkey '%s' at %d\n", DEV_ID_LOG(device), label2str(device->softKeyConfiguration.modes[softKeySet].ptr[i]), i);
+	for(uint8_t i = 0; i < count; i++) {
+		if(keys[i] == softKey) {
+			sccp_log((DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_4 "%s: found softkey '%s' at %d\n", DEV_ID_LOG(device), label2str(keys[i]), i);
 			if (enable) {
 				device->softKeyConfiguration.activeMask[softKeySet] |= (1 << i);
 			} else {
@@ -1208,13 +1237,17 @@ void sccp_softkey_setSoftkeyState(devicePtr device, skinny_keymode_t softKeySet,
 
 boolean_t __PURE__ sccp_softkey_isSoftkeyInSoftkeySet(constDevicePtr device, const skinny_keymode_t softKeySet, const uint8_t softKey)
 {
-	if (!device || !device->softKeyConfiguration.size) {
+	/* the transmitted layout, so a key the device was not offered answers no - the
+	 * question being asked is what this phone has in front of the user */
+	uint8_t count = 0;
+	const uint8_t * keys = sccp_softkey_getTransmittedKeys(device, softKeySet, &count);
+	if(!keys) {
 		return FALSE;
 	}
 
 	/* find softkey */
-	for(uint8_t i = 0; i < device->softKeyConfiguration.modes[softKeySet].count; i++) {
-		if (device->softKeyConfiguration.modes[softKeySet].ptr && device->softKeyConfiguration.modes[softKeySet].ptr[i] == softKey) {
+	for(uint8_t i = 0; i < count; i++) {
+		if(keys[i] == softKey) {
 			return TRUE;
 		}
 	}

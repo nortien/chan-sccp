@@ -18,6 +18,14 @@ SCCP_API struct softKeySetConfigList softKeySetConfig; /*!< List of SoftKeySets 
 typedef struct sccp_softkeyMap_cb sccp_softkeyMap_cb_t;
 
 /*!
+ * \brief Number of key positions one softkeyset can occupy on the wire
+ * \note Has to match StationMaxSoftKeyIndex in sccp_protocol.h, which sizes the array
+ *       in SoftKeySetResMessage. Repeated here because sccp_device.h records the
+ *       transmitted layout of a set and does not include the protocol definitions.
+ */
+#define SCCP_MAX_SOFTKEYS_PER_SET 16
+
+/*!
  * \brief SKINNY Soft Key Modes Structure
  */
 typedef struct {

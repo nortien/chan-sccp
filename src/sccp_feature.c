@@ -1492,6 +1492,17 @@ void sccp_feat_changed(constDevicePtr device, constLineDevicePtr maybe_ld, sccp_
 void sccp_feat_monitor(constDevicePtr device, constLinePtr no_line, uint32_t no_lineInstance, constChannelPtr maybe_channel)
 {
 	sccp_featureConfiguration_t *monitorFeature = (sccp_featureConfiguration_t *const)&device->monitorFeature;		/* discard const */
+	/* Refuse outright when this device sends its media straight to the far end.
+	 * Asterisk never sees that audio, so the recording would be started, reported as
+	 * running, and written as an empty file. The softkey is already withheld in that
+	 * case; this catches the feature button and any other way in, and says why in the
+	 * log rather than leaving an operator to wonder about a silent file. */
+	if (device->directrtp) {
+		pbx_log(LOG_WARNING, "%s: (sccp_feat_monitor) Refusing to record: this device uses direct RTP, so Asterisk does not carry the audio and the recording would be empty. Set directrtp=off for this device, or globally, to record.\n", device->id);
+		sccp_dev_displayprinotify(device, SKINNY_DISP_RECORDING_FAILED, SCCP_MESSAGE_PRIORITY_MONITOR, SCCP_DISPLAYSTATUS_TIMEOUT * 3);
+		monitorFeature->status = SCCP_FEATURE_MONITOR_STATE_DISABLED;
+		return;
+	}
 	if (!maybe_channel) {
 		if (monitorFeature->status & SCCP_FEATURE_MONITOR_STATE_REQUESTED) {
 			monitorFeature->status &= ~SCCP_FEATURE_MONITOR_STATE_REQUESTED;

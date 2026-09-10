@@ -244,7 +244,9 @@ struct sccp_device {
 	uint8_t video_cos;											/*!< video stream class_of_service (COS) (VRTP) */
 	struct {
 		softkey_modes *modes;										/*!< used softkeySet */
-		uint32_t activeMask[SCCP_MAX_SOFTKEY_MASK];							/*!< enabled softkeys mask */
+		uint32_t activeMask[SCCP_MAX_SOFTKEY_MASK];							/*!< enabled softkeys mask, one bit per transmitted key position */
+		uint8_t transmitted[SCCP_MAX_SOFTKEY_MASK][SCCP_MAX_SOFTKEYS_PER_SET];				/*!< the labels this device was actually sent, in the order they were sent */
+		uint8_t transmittedCount[SCCP_MAX_SOFTKEY_MASK];						/*!< how many of them, per keyset; zero until the set has been built */
 		uint8_t size;											/*!< how many softkeysets are provided by modes */
 	} softKeyConfiguration;											/*!< SoftKeySet configuration */
 

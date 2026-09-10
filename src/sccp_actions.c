@@ -2757,9 +2757,14 @@ void sccp_handle_soft_key_template_req(constSessionPtr s, devicePtr d, constMess
 			case SKINNY_LBL_JOIN:
 				/* fall through */
 			case SKINNY_LBL_CONFLIST:
-				if (!d->allow_conference) {
-					break;
-				}
+				/* The label is sent whether or not this device may hold conferences.
+				 * Withholding it used to leave the three keys blank, since a key with
+				 * no label has nothing to draw, while the key state was greyed
+				 * separately. The result on the phone was a row with two empty grey
+				 * gaps in it, next to other unavailable keys that do show their names,
+				 * so the operator could see that something was unavailable but not
+				 * what. Every other key that cannot be used keeps its name and is
+				 * greyed by the active key mask; these three now do the same. */
 #endif
 				/* fall through */
 			default:
@@ -2894,6 +2899,15 @@ void handle_soft_key_set_req(constSessionPtr s, devicePtr d, constMessagePtr msg
 	size_t buffersize = 20 + (15 * sizeof(softkeysmap));
 	pbx_str_t *outputStr = pbx_str_create(buffersize);
 
+	/* The sets are about to be rebuilt, so any layout recorded by an earlier build and
+	 * every positional bit in the mask that goes with it are meaningless from here on.
+	 * A device that re-registers after a reload can get a different row than it had.
+	 * Start from all keys enabled and no layout known; the states that depend on the
+	 * device and on the call are re-derived by sccp_dev_set_keyset every time it sends
+	 * a set, and it sends the onhook one at the end of this function. */
+	memset(&d->softKeyConfiguration.activeMask, 0xFF, sizeof d->softKeyConfiguration.activeMask);
+	memset(&d->softKeyConfiguration.transmittedCount, 0, sizeof d->softKeyConfiguration.transmittedCount);
+
 	for (i = 0; i < v_count; i++) {
 		b = v->ptr;
 		uint8_t c = 0;
@@ -2904,15 +2918,22 @@ void handle_soft_key_set_req(constSessionPtr s, devicePtr d, constMessagePtr msg
 
 		pbx_str_append(&outputStr, buffersize, "%-15s => |", skinny_keymode2str(v->id));
 
-		/* cp advances only where a key is actually placed, further down. It used to
-		 * advance here alongside c, so every key skipped by the tests below left a
-		 * zeroed slot in the middle of the row instead of letting the rest close up.
-		 * The two counters exist precisely because the output position is not the
-		 * input position; with both advancing together one of them is redundant. On
-		 * a phone with few visible softkeys, keys after such a hole fall off the
-		 * display, which reads as a custom softkey set not working. */
-		for (c = 0, cp = 0; c < v->count; c++) {
-			msg_out->data.SoftKeySetResMessage.definition[v->id].softKeyTemplateIndex[cp] = 0;
+		/* c walks the configured list, cp is the position the key takes in the message,
+		 * and cp only advances when something is actually written there. So a key this
+		 * device is not offered leaves no hole: the row the phone gets is packed. That
+		 * matters on a phone with four key positions and no way to scroll, where a hole
+		 * costs a quarter of the row and can push a key off the display entirely.
+		 *
+		 * Packing alone is not enough, and doing only half of this broke the phone once
+		 * already in this audit. The active key mask in SelectSoftKeys is positional,
+		 * one bit per position, and the bits used to be numbered against the CONFIGURED
+		 * list. Closing a gap here therefore shifted every later key down a slot while
+		 * its bit stayed where it was, and each of them took on its neighbour's state:
+		 * with conferencing off, the two greyed keys came out one place to the right, on
+		 * the parking and recording keys, which a log could never have shown. The record
+		 * below publishes the transmitted order so the mask is numbered against these
+		 * same positions. The two belong together - never pack without recording. */
+		for (c = 0, cp = 0; c < v->count && cp < SCCP_MAX_SOFTKEYS_PER_SET; c++) {
 			/* look for the SKINNY_LBL_ number in the softkeysmap */
 			if ((b[c] == SKINNY_LBL_PARK) && (!d->park)) {
 				continue;
@@ -2974,18 +2995,39 @@ void handle_soft_key_set_req(constSessionPtr s, devicePtr d, constMessagePtr msg
 			}
 #endif
 			if(b[c] == SKINNY_LBL_EMPTY) {
+				/* An 'empty' written into the softkeyset is a hole the operator asked
+				 * for, not a key that turned out to be unavailable, so it keeps its
+				 * position and its bit. The default ringout set opens with one, which
+				 * is how EndCall comes to sit in the second slot there. Packing is for
+				 * keys this device is not offered - not for the layout as configured. */
+				if(v->id < ARRAY_LEN(d->softKeyConfiguration.transmitted)) {
+					d->softKeyConfiguration.transmitted[v->id][cp] = SKINNY_LBL_EMPTY;
+				}
+				ast_str_append(&outputStr, buffersize, "%-2d:%-9s|", cp, "");
+				cp++;
 				continue;
 			}
 			for (j = 0; j < sizeof(softkeysmap); j++) {
 				if (b[c] == softkeysmap[j]) {
-					ast_str_append(&outputStr, buffersize, "%-2d:%-9s|", c, label2str(softkeysmap[j]));
+					ast_str_append(&outputStr, buffersize, "%-2d:%-9s|", cp, label2str(softkeysmap[j]));
 					msg_out->data.SoftKeySetResMessage.definition[v->id].softKeyTemplateIndex[cp] = (j + 1);
 					msg_out->data.SoftKeySetResMessage.definition[v->id].les_softKeyInfoIndex[cp] = htoles(j + 301);
+					if(v->id < ARRAY_LEN(d->softKeyConfiguration.transmitted)) {
+						d->softKeyConfiguration.transmitted[v->id][cp] = b[c];
+					}
 					cp++;
 					break;
 				}
 			}
 
+		}
+		/* Publish what this keyset actually became, so the mask can be numbered against
+		 * the positions the phone has rather than the ones the configuration has. Only
+		 * for a keyset that has keys: the modes array is indexed by keymode and its
+		 * unused entries read back as keymode 0, which would otherwise wipe the record
+		 * of the real ONHOOK set. */
+		if(v->count && v->id < ARRAY_LEN(d->softKeyConfiguration.transmittedCount)) {
+			d->softKeyConfiguration.transmittedCount[v->id] = cp;
 		}
 
 		sccp_log((DEBUGCAT_DEVICE | DEBUGCAT_SOFTKEY)) (VERBOSE_PREFIX_3 "%s: %s\n", d->id, ast_str_buffer(outputStr));

@@ -1502,10 +1502,39 @@ void sccp_dev_set_keyset(constDevicePtr d, uint8_t lineInstance, uint32_t callid
 		sccp_softkey_setSoftkeyState((sccp_device_t *) d, softKeySetIndex, SKINNY_LBL_CONFLIST, FALSE);
 		sccp_softkey_setSoftkeyState((sccp_device_t *) d, softKeySetIndex, SKINNY_LBL_JOIN, FALSE);
 	}
+#else
+	/* Built without conference support, so the three keys cannot do anything. Without
+	 * this they kept whatever state they were left in, which is enabled, and the phone
+	 * offered a live-looking key for a feature that is not in the binary at all. The
+	 * branch above already greys them for a device whose configuration turns
+	 * conferencing off; this does the same when the driver itself has none. */
+	sccp_softkey_setSoftkeyState((sccp_device_t *) d, softKeySetIndex, SKINNY_LBL_CONFRN, FALSE);
+	sccp_softkey_setSoftkeyState((sccp_device_t *) d, softKeySetIndex, SKINNY_LBL_CONFLIST, FALSE);
+	sccp_softkey_setSoftkeyState((sccp_device_t *) d, softKeySetIndex, SKINNY_LBL_JOIN, FALSE);
 #endif
 
 	/* deactivate monitor softkey for all states excl. connected -MC */
 	if (softKeySetIndex != KEYMODE_CONNTRANS && softKeySetIndex != KEYMODE_CONNECTED && softKeySetIndex != KEYMODE_EMPTY) {
+		sccp_softkey_setSoftkeyState((sccp_device_t *) d, softKeySetIndex, SKINNY_LBL_MONITOR, FALSE);
+	}
+	/* Withhold the park key while the pbx has no parking to offer. The parking module
+	 * can be absent, or present and declining to load for want of a configuration, and
+	 * in that state every attempt comes back as a temporary failure. The phone showed
+	 * the key regardless, so the only way to learn that parking was unavailable was to
+	 * put a live call on it and read the error. Seen on the bench: the module was
+	 * loaded but not running, with no configuration file at all, and the key was
+	 * offered the whole time. The accessor is optional, so a wrapper that does not
+	 * provide it leaves behaviour exactly as before. */
+	if(iPbx.feature_parkingAvailable && !iPbx.feature_parkingAvailable()) {
+		sccp_softkey_setSoftkeyState((sccp_device_t *) d, softKeySetIndex, SKINNY_LBL_PARK, FALSE);
+	}
+	/* And in every state when this device sends its media straight to the far end.
+	 * Recording asks Asterisk to write down audio it never receives in that case, so
+	 * the request succeeds, the phone reports that it is recording, and the file holds
+	 * nothing but a header. Offering a key that cannot do its job is worse than not
+	 * offering it. The device value inherits the global one, so this covers a
+	 * deployment-wide setting and a single phone alike. */
+	if (d->directrtp) {
 		sccp_softkey_setSoftkeyState((sccp_device_t *) d, softKeySetIndex, SKINNY_LBL_MONITOR, FALSE);
 	}
 	if (softKeySetIndex == KEYMODE_RINGOUT) {

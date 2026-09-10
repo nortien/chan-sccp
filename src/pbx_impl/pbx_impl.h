@@ -116,6 +116,10 @@ typedef struct _PbxInterface {
 
 	/* feature section */
 	sccp_parkresult_t(*const feature_park) (constChannelPtr hostChannel);
+	/* Whether the pbx can park a call at all right now. Optional: a wrapper that does
+	 * not set it leaves it NULL, and callers are expected to test the pointer, as they
+	 * already do for feature_park itself. */
+	boolean_t(*const feature_parkingAvailable) (void);
 	boolean_t(*const feature_stopMusicOnHold) (constChannelPtr channel);
 	boolean_t(*const feature_addToDatabase) (const char *family, const char *key, const char *value);
 	boolean_t(*const feature_getFromDatabase) (const char *family, const char *key, char *out, int outlen);
