@@ -745,13 +745,17 @@ static int sccp_func_sccpline(PBX_CHANNEL_TYPE * chan, NEWCONST char * cmd, char
 #ifdef CS_AST_HAS_NAMEDGROUP
 			} else if (!strcasecmp(token, "named_callgroup")) {
 #	ifdef CS_SCCP_PICKUP
-				ast_copy_string(buf, l->namedcallgroup, len);
+				/* buf is the 1024-byte local; len is the size of the caller's output
+				 * buffer, which Asterisk gives as 4096. These two were the only copies
+				 * into buf sized by len, and a named group string from the config is
+				 * not bounded - a stack overflow from sccp.conf. */
+				sccp_copy_string(buf, l->namedcallgroup, buf_len);
 #	else
 				sccp_copy_string(buf, "not supported", buf_len);
 #	endif
 			} else if (!strcasecmp(token, "named_pickupgroup")) {
 #	ifdef CS_SCCP_PICKUP
-				ast_copy_string(buf, l->namedpickupgroup, len);
+				sccp_copy_string(buf, l->namedpickupgroup, buf_len);
 #	else
 				sccp_copy_string(buf, "not supported", buf_len);
 #	endif

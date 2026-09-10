@@ -1920,7 +1920,7 @@ static char **__sccp_bt_get_symbols(void **addresses, size_t num_frames)
 #endif  // HAVE_EXECINFO_H
 #endif	// ASTERISK_VERSION_GROUP
 
-void sccp_do_backtrace()
+void sccp_do_backtrace(void)
 {
 	pbx_rwlock_rdlock(&GLOB(lock));
 	boolean_t running = GLOB(module_running);
@@ -1970,7 +1970,7 @@ void sccp_do_backtrace()
 #endif	// HAVE_EXECINFO_H
 }
 #	else
-void sccp_do_backtrace()
+void sccp_do_backtrace(void)
 {
 	// not implemented
 }

@@ -1071,6 +1071,13 @@ sccp_value_changed_t sccp_config_parse_ipaddress(void * const dest, const size_t
 		pbx_log(LOG_WARNING, "Invalid IP address: %s\n", value);
 		changed = SCCP_CONFIG_CHANGE_INVALIDVALUE;
 	} else {
+		/* port= writes into the same sockaddr. Parsed with the port forbidden, the new
+		 * address carries port 0, and copying it over the old one threw away a port that
+		 * had already been set - so a [general] with port= above bindaddr= listened on
+		 * 2000 whatever it said. Carry the port across. */
+		if (sccp_netsock_getPort(&bindaddr_new) == 0 && sccp_netsock_getPort(&bindaddr_prev) != 0) {
+			sccp_netsock_setPort(&bindaddr_new, sccp_netsock_getPort(&bindaddr_prev));
+		}
 		if (sccp_netsock_cmp_addr(&bindaddr_prev, &bindaddr_new)) {                                        // 0 = equal
 			memcpy(&(*(struct sockaddr_storage *)dest), &bindaddr_new, sizeof(bindaddr_new));
 			changed = SCCP_CONFIG_CHANGE_CHANGED;
@@ -1770,7 +1777,15 @@ sccp_value_changed_t sccp_config_parse_permithosts(void * const dest, const size
 	int                 varCount  = 0;
 	int                 found     = 0;
 
+	/* An empty value is the config engine clearing the option (it hands every parser ""
+	 * when the file does not set an option that has no default), not a host. It used to
+	 * become an entry with an empty name on every device without a permithost= line -
+	 * harmless while nothing read the list, and a getaddrinfo("") on every ACL refusal
+	 * once permithost started doing its job. Skip it in both passes so the counts agree. */
 	for (v = vroot; v; v = v->next) {
+		if (sccp_strlen_zero(v->value)) {
+			continue;
+		}
 		SCCP_LIST_TRAVERSE(permithostList, permithost, list) {
 			if (sccp_strcaseequals(permithost->name, v->value)) {                                        // variable found
 				found++;
@@ -1784,6 +1799,9 @@ sccp_value_changed_t sccp_config_parse_permithosts(void * const dest, const size
 			sccp_free(permithost);
 		}
 		for (v = vroot; v; v = v->next) {
+			if (sccp_strlen_zero(v->value)) {
+				continue;
+			}
 			if (!(permithost = (sccp_hostname_t *)sccp_calloc(1, sizeof(sccp_hostname_t)))) {
 				pbx_log(LOG_ERROR, SS_Memory_Allocation_Error, "SCCP");
 				return SCCP_CONFIG_CHANGE_ERROR;
@@ -2786,9 +2804,14 @@ boolean_t sccp_config_readDevicesLines(sccp_readingtype_t readingtype)
 			/* check minimum requirements for a line */
 			sccp_log((DEBUGCAT_CONFIG))(VERBOSE_PREFIX_2 "Parsing line [%s]\n", cat);
 
-			if ((!(!sccp_strlen_zero(pbx_variable_retrieve(GLOB(cfg), cat, "label"))) && (!sccp_strlen_zero(pbx_variable_retrieve(GLOB(cfg), cat, "cid_name")))
-			     && (!sccp_strlen_zero(pbx_variable_retrieve(GLOB(cfg), cat, "cid_num"))))) {
-				pbx_log(LOG_WARNING, "Unknown type '%s' for '%s' in %s\n", utype, cat, "sccp.conf");
+			/* label, cid_name and cid_num are the options the table marks REQUIRED for a
+			 * line. The test here was meant to skip a section missing any of them, but
+			 * its brackets came out as "label missing AND the other two present", which
+			 * no real section matches, and the message it printed was copied from the
+			 * device check. Say what is missing and skip the section. */
+			if (sccp_strlen_zero(pbx_variable_retrieve(GLOB(cfg), cat, "label")) || sccp_strlen_zero(pbx_variable_retrieve(GLOB(cfg), cat, "cid_name"))
+			    || sccp_strlen_zero(pbx_variable_retrieve(GLOB(cfg), cat, "cid_num"))) {
+				pbx_log(LOG_WARNING, "SCCP: line [%s] in sccp.conf is missing one of the required options label, cid_name, cid_num - skipping it\n", cat);
 				continue;
 			}
 			line_count++;

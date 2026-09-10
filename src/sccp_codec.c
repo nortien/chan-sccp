@@ -95,7 +95,7 @@ const struct skinny_codec skinny_codecs[] = {
 	/* clang-format on */
 };
 
-uint8_t __CONST__ sccp_codec_getArrayLen()
+uint8_t __CONST__ sccp_codec_getArrayLen(void)
 {
 	return ARRAY_LEN(skinny_codecs);
 }
@@ -175,13 +175,18 @@ static void codec_pref_remove(skinny_codec_t * skinny_codec_prefs, skinny_codec_
 	boolean_t found = FALSE;
 
 	for (x = 0; x < SKINNY_MAX_CAPABILITIES && skinny_codec_prefs[x] != SKINNY_CODEC_NONE; x++) {
-		if (!found && skinny_codec_prefs[x] == skinny_codec) {
+		if (skinny_codec_prefs[x] == skinny_codec) {
 			found = TRUE;
-		}
-		if (found) {
+			/* One move closes the gap; the tail after it is already in place. This used to
+			 * keep moving on every later iteration too, and since x advanced past the
+			 * element just shifted into place, every second codec after the removed one
+			 * was dropped: disallow=B on [A,B,C,D,E] left [A,C,E]. */
 			memmove(skinny_codec_prefs + x, skinny_codec_prefs + (x + 1), (SKINNY_MAX_CAPABILITIES - (x + 1)) * sizeof(skinny_codec_t));                                        // move left
+			skinny_codec_prefs[SKINNY_MAX_CAPABILITIES - 1] = SKINNY_CODEC_NONE;
+			break;
 		}
 	}
+	(void)found;
 }
 
 /*!

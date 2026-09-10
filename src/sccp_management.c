@@ -1213,10 +1213,19 @@ char * sccp_manager_retrieve_parkedcalls_cxml(char ** out)
 		pbx_str_append(&tmpPbxStr, 0, "<Title>Parked Calls</Title>");
 		pbx_str_append(&tmpPbxStr, 0, "<Prompt>Please Choose on of the parking lots</Prompt>");
 		pbx_str_append(&tmpPbxStr, 0, "<DirectoryEntry>");
+		/* Split the manager text on the blank line between events. The sscanf that
+		 * stood here scanned into a NULL token and an unbounded %s - proof enough that
+		 * nothing ever ran this function; it is CS_EXPERIMENTAL and has no caller. */
 		char *strptr = parkedcalls_messageStr;
 		char *token = NULL;
-		char *rest = strptr;
-		while (sscanf(strptr, "%[^\r\n]\r\n\r\n%s", token, rest) && token) {
+		char *rest = NULL;
+		while (strptr && *strptr) {
+			char *sep = strstr(strptr, "\r\n\r\n");
+			rest = sep ? sep + 4 : NULL;
+			if (sep) {
+				*sep = '\0';
+			}
+			token = strptr;
 			sccp_log(DEBUGCAT_CORE)(VERBOSE_PREFIX_2 "SCCP: (sccp_manager_retrieve_parkedcalls_cxml) token='%s', rest='%s'\n", token, rest);
 			usleep(500);
 

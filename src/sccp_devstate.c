@@ -135,7 +135,9 @@ static void parseButtonArgs(const char * args, feature_state_t * states)
 	char * arg = NULL;
 	while((arg = strsep(&_args, "|")) != NULL) {
 		unsigned short int state, rythm, color, icon, nextstate;
-		if(sscanf(arg, "%1hd%1hd%1hd%1hd%1hd", &state, &rythm, &color, &icon, &nextstate) == 5 && state < AST_DEVICE_TOTAL) {
+		/* nextstate indexes the same table later on, so it needs the same bound as
+		 * state; a 9 here is AST_DEVICE_TOTAL and one past the end. */
+		if(sscanf(arg, "%1hu%1hu%1hu%1hu%1hu", &state, &rythm, &color, &icon, &nextstate) == 5 && state < AST_DEVICE_TOTAL && nextstate < AST_DEVICE_TOTAL) {
 			states[state].value.strct.rythm = rythm;
 			states[state].value.strct.color = color;
 			states[state].value.strct.icon = icon;
