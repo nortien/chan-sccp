@@ -37,6 +37,7 @@ SCCP_FILE_VERSION(__FILE__, "");
 #ifdef HAVE_PBX_ACL_H				// AST_SENSE_ALLOW
 #  include <asterisk/acl.h>
 #endif
+#include <netdb.h>				// getaddrinfo, for the permithost check below
 #if defined(CS_AST_HAS_EVENT) && defined(HAVE_PBX_EVENT_H) 	// ast_event_subscribe
 #  include <asterisk/event.h>
 #endif
@@ -348,29 +349,42 @@ static boolean_t sccp_device_checkACL(constDevicePtr device)
 
 		sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: not allowed by deny/permit list (%s). Checking permithost list...\n", device->id, pbx_str_buffer(ha_buf));
 
-		/*! \todo check permithosts with IPv6 */
-		/*
-		   struct ast_hostent ahp;
-		   struct hostent *hp;
-		   sccp_hostname_t *permithost;
+		/* Was dead for years: the original walked hostent and compared a bare
+		 * sin_addr.s_addr, so when the driver moved to sockaddr_storage the whole
+		 * block was commented out with a \todo. The list kept filling from the config
+		 * and nothing read it, while the rejection message below still claimed
+		 * permithosts had been consulted. getaddrinfo gives us both A and AAAA records
+		 * and sccp_netsock_cmp_addr already handles the v4-in-v6 case, so this now does
+		 * what the option has always promised. We only get here on the reject branch,
+		 * so the DNS lookup costs nothing on the normal path where the address already
+		 * passed deny/permit. */
+		sccp_hostname_t *permithost = NULL;
 
-		   uint8_t i = 0;
-
-		   SCCP_LIST_TRAVERSE_SAFE_BEGIN(&device->permithosts, permithost, list) {
-		   if ((hp = pbx_gethostbyname(permithost->name, &ahp))) {
-		   for (i = 0; NULL != hp->h_addr_list[i]; i++) {                                       // walk resulting ip address
-		   if (sin.sin_addr.s_addr == (*(struct in_addr *) hp->h_addr_list[i]).s_addr) {
-		   sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: permithost = %s match found.\n", device->id, permithost->name);
-		   matchesACL = TRUE;
-		   continue;
-		   }
-		   }
-		   } else {
-		   sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: Invalid address resolution for permithost = %s (skipping permithost).\n", device->id, permithost->name);
-		   }
-		   }
-		   SCCP_LIST_TRAVERSE_SAFE_END;
-		 */
+		SCCP_LIST_TRAVERSE(&device->permithosts, permithost, list) {
+			struct addrinfo hints = { .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM };
+#if defined(AI_ADDRCONFIG)
+			hints.ai_flags |= AI_ADDRCONFIG;
+#endif
+			struct addrinfo * res = NULL;
+			int e = getaddrinfo(permithost->name, NULL, &hints, &res);
+			if (e != 0) {
+				sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: could not resolve permithost '%s': %s (skipping)\n", device->id, permithost->name, gai_strerror(e));
+				continue;
+			}
+			for (struct addrinfo * ai = res; ai; ai = ai->ai_next) {
+				struct sockaddr_storage candidate = { 0 };
+				memcpy(&candidate, ai->ai_addr, ai->ai_addrlen);
+				if (sccp_netsock_cmp_addr(&candidate, &sas) == 0) {
+					sccp_log((DEBUGCAT_DEVICE)) (VERBOSE_PREFIX_3 "%s: permithost '%s' (%s) matches connecting address\n", device->id, permithost->name, sccp_netsock_stringify_addr(&candidate));
+					matchesACL = TRUE;
+					break;
+				}
+			}
+			freeaddrinfo(res);
+			if (matchesACL) {
+				break;
+			}
+		}
 	} else {
 		matchesACL = TRUE;
 	}
