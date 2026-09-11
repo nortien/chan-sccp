@@ -79,7 +79,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
-        run: gh release upload "$TAG" dist/chan_sccp-ast${{ matrix.ast }}-sng12.so --clobber
+        # --repo is required: gh would otherwise infer the repository from the
+        # git remote, and git in the container refuses the checkout directory
+        # ("detected dubious ownership") because it is owned by another uid.
+        run: gh release upload "$TAG" dist/chan_sccp-ast${{ matrix.ast }}-sng12.so --clobber --repo "${{ github.repository }}"
 
   # FreePBX 16 (CentOS 7 based, "sng7") ships Asterisk 18 and 20. Those two
   # binaries are built on real sng7 boxes with the asterisk<major>-devel from
