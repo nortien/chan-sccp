@@ -1,3 +1,15 @@
+chan-sccp (4.4.1-1) unstable; urgency=medium
+
+  * Conferencing and video on by default in configure; a plain ./configure
+    matches the release binaries. --disable-conference / --disable-video
+    to opt out.
+  * --enable-advanced-functions and --enable-distributed-devicestate no
+    longer part of the documented build (nothing usable / no-op on 13+).
+  * CI creates the GitHub release from a pushed v* tag and attaches all
+    seven binaries (sng12 and sng7).
+
+ -- nortien <17888414+nortien@users.noreply.github.com>  Thu, 11 Sep 2026 19:10:00 +0300
+
 chan-sccp (4.4.0-1) unstable; urgency=medium
 
   * First release of the nortien fork line. Builds and runs on Asterisk 13

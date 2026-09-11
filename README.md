@@ -42,18 +42,18 @@ Then:
 ```bash
 git clone https://github.com/nortien/chan-sccp.git
 cd chan-sccp
-./configure --enable-conference --enable-video
+./configure
 make -j"$(nproc)"
 sudo make install
 ```
 
-`./configure` finds your Asterisk version by itself. Everything most installs need is on by default: call park, pickup, directed transfer, feature buttons, speed dials with busy lamps, dialplan functions, the AMI interface. The two options above switch on the parts that are off by default:
+`./configure` needs no options: it finds your Asterisk version by itself, and everything the module can switch on is built in by default: call park, pickup, directed transfer, feature buttons, speed dials with busy lamps, dialplan functions, the AMI interface, phone-driven conferencing and video. The options exist to turn things off or to point at an unusual Asterisk:
 
 | Option | What it does | Default |
 |---|---|---|
-| `--enable-conference` | Conferencing from the phone: the Conf softkey and the participant list. | off |
-| `--enable-video` | Video calls between phones that support video (8945, 9971). Experimental; harmless on phones without a camera. | off |
-| `--enable-advanced-functions` | Meant to add three extra softkeys, but none of them is finished upstream: Callback only shows "Key is not active", cBarge is unreachable code, and Transfer to Voicemail is already there in every build under the name `transvm`. The option changes nothing you can use either way. Leave it off; the 4.4.0 binaries were built with it, which makes no difference. | off |
+| `--disable-conference` | Build without conferencing from the phone (the Conf softkey and the participant list). | on |
+| `--disable-video` | Build without video calls between phones that support video (8945, 9971). Video is experimental; on phones without a camera it only adds one log line per call. | on |
+| `--enable-advanced-functions` | Meant to add three extra softkeys, but none of them is finished upstream: Callback only shows "Key is not active", cBarge is unreachable code, and Transfer to Voicemail is already there in every build under the name `transvm`. Changes nothing you can use. The 4.4.0 binaries were built with it, which makes no difference. | off |
 | `--enable-distributed-devicestate` | Shared device state between Asterisk servers, for Asterisk 1.8 to 12 only. Does nothing on Asterisk 13 and later. | off |
 | `--with-asterisk-version=22.0` | Pins the Asterisk version when several sets of headers are installed. | detected |
 | `--with-asterisk=PATH`, `--with-astmoddir=PATH` | An Asterisk installed outside the usual places, and where to put the module. | detected |
@@ -74,8 +74,7 @@ Re-run the installer script, which picks the newest release binary, or from a so
 
 ```bash
 git pull origin stable
-./configure --enable-conference --enable-advanced-functions \
-  --enable-distributed-devicestate --enable-video
+./configure
 make -j"$(nproc)"
 sudo make install
 sudo fwconsole restart
@@ -103,7 +102,7 @@ sccp show lines
 
 ## Development
 
-`./tools/bootstrap.sh` regenerates `configure` after changes to `configure.ac` or `autoconf/*.m4`. Releases are built by [GitHub Actions](.github/workflows/build-release.yml) for the sng12 targets; the sng7 binaries are built on real sng7 machines and attached by hand. See [Building from source and development](https://github.com/nortien/sccp_manager/wiki/Building-and-Development) in the wiki.
+`./tools/bootstrap.sh` regenerates `configure` after changes to `configure.ac` or `autoconf/*.m4`. Pushing a signed tag `vX.Y.Z` makes a release: [GitHub Actions](.github/workflows/build-release.yml) creates the GitHub release from the tag message and builds and attaches all seven binaries, sng12 in Debian 12 containers and sng7 in CentOS 7 containers pointed at Sangoma's mirrors. See [Building from source and development](https://github.com/nortien/sccp_manager/wiki/Building-and-Development) in the wiki.
 
 ## Credits
 

@@ -940,10 +940,13 @@ AC_DEFUN([CS_DISABLE_MONITOR], [
 ])
 
 AC_DEFUN([CS_ENABLE_CONFERENCE], [
+	dnl On by default in this tree: every supported Asterisk (13 and later) has the
+	dnl bridge API it needs, and the SCCP Manager module exposes the conference
+	dnl settings, so a plain ./configure must produce a driver that honours them.
 	AC_ARG_ENABLE(conference, 
-		[AC_HELP_STRING([--enable-conference], [enable conference (>ast 1.6.2)])], 
+		[AC_HELP_STRING([--disable-conference], [build without phone-driven conferencing (on by default)])], 
 		[ac_cv_use_conference=$enableval], 
-		[ac_cv_use_conference=no]
+		[ac_cv_use_conference=yes]
 	)
 	AS_IF([test "_${ac_cv_use_conference}" == "_yes"], [AC_DEFINE(CS_SCCP_CONFERENCE, 1, [conference enabled])])
 	AC_MSG_RESULT([--enable-conference: ${ac_cv_use_conference}])
@@ -1123,10 +1126,12 @@ AC_DEFUN([CS_DISABLE_DYNAMIC_SPEEDDIAL_CID], [
 ])
 
 AC_DEFUN([CS_ENABLE_VIDEO], [
+	dnl On by default in this tree, matching the release binaries. Phones without
+	dnl a camera only get one log line per call; --disable-video turns it off.
 	AC_ARG_ENABLE(video, 
-		[AC_HELP_STRING([--enable-video], [enable streaming video (experimental)])], 
+		[AC_HELP_STRING([--disable-video], [build without video between phones (on by default, experimental)])], 
 		[ac_cv_streaming_video=$enableval], 
-		[ac_cv_streaming_video=no]
+		[ac_cv_streaming_video=yes]
 	)
 	AS_IF([test "_${ac_cv_streaming_video}" == "_yes"], [AC_DEFINE(CS_SCCP_VIDEO, 1, [Using streaming video])])
 	AC_MSG_RESULT([--enable-video: ${ac_cv_streaming_video}])

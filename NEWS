@@ -1,3 +1,16 @@
+Version: 4.4.1_stable
+==========================
+
+ - Phone-driven conferencing and video are built in by default; a plain
+   ./configure produces the same driver as the release binaries. Use
+   --disable-conference / --disable-video to leave them out.
+ - --enable-advanced-functions and --enable-distributed-devicestate dropped
+   from the documented and CI builds: the first adds nothing usable, the
+   second is a no-op on Asterisk 13 and later.
+ - Releases are created by CI when a v* tag is pushed, and all seven binaries
+   (sng12: Asterisk 18-23, sng7: Asterisk 18 and 20) are built and attached;
+   the release text is the annotated tag message.
+
 Version: 4.4.0_stable
 ==========================
 
