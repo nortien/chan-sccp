@@ -53,6 +53,10 @@ jobs:
             > /etc/apt/sources.list.d/freepbx.list
           apt-get update
 
+      # libssl-dev is deliberately absent: the experimental TLS transport
+      # (port 2443) is unreviewed and unsupported, so release binaries are
+      # built without it on every target. Verified 2026-09-11: the only
+      # symbols a stand build with OpenSSL adds are SSL_*/ERR_*.
       - name: Install asterisk${{ matrix.ast }}-devel (must match the target Asterisk build exactly)
         run: DEBIAN_FRONTEND=noninteractive apt-get install -y asterisk${{ matrix.ast }}-devel
 
