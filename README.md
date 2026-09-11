@@ -2,7 +2,7 @@
 
 Cisco SCCP ("Skinny") channel driver for Asterisk, in the nortien fork line. SCCP is the protocol Cisco desk phones speak to a Cisco CallManager; this driver lets Asterisk answer them instead, so Cisco 79xx, 69xx and 89xx phones work on FreePBX 16 and 17 with no CallManager at all. New to the terms? The wiki has a [glossary](https://github.com/nortien/sccp_manager/wiki/Glossary).
 
-**Current release: 4.4.0** · GUI companion: [nortien/sccp_manager](https://github.com/nortien/sccp_manager) · Documentation: [wiki](https://github.com/nortien/sccp_manager/wiki)
+**Current release: 4.4.1** · GUI companion: [nortien/sccp_manager](https://github.com/nortien/sccp_manager) · Documentation: [wiki](https://github.com/nortien/sccp_manager/wiki)
 
 | | |
 |---|---|
