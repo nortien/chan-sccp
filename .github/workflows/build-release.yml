@@ -3,56 +3,78 @@ name: Build release binaries
 on:
   release:
     types: [published]
+  # Manual run against an existing tag, so a release can be (re)built without
+  # deleting and recreating it just to fire the `published` event.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to attach the binaries to (e.g. v4.4.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
-  build-ast23-sng12:
-    name: chan_sccp.so (Asterisk 23 / sng12, Debian 12)
+  # One binary per Asterisk major that FreePBX 17 (Debian 12, "sng12") ships.
+  # The headers come from the same apt repo the target boxes use, so the
+  # module is built against exactly the Asterisk build it will load into.
+  build-sng12:
+    name: chan_sccp.so (Asterisk ${{ matrix.ast }} / sng12, Debian 12)
     runs-on: ubuntu-latest
     container: debian:bookworm
+    strategy:
+      fail-fast: false
+      matrix:
+        ast: [18, 20, 21, 22, 23]
     steps:
       - name: Install base build tools
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            ca-certificates gnupg git build-essential autoconf automake gettext
+            ca-certificates gnupg git build-essential autoconf automake gettext file
 
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
 
-      - name: Add FreePBX apt repo (source of asterisk23-devel)
+      - name: Add FreePBX apt repo (source of asterisk${{ matrix.ast }}-devel)
         run: |
           cp .github/keys/freepbx-repo.gpg /etc/apt/trusted.gpg.d/freepbx.gpg
           echo "deb [arch=amd64] http://deb.freepbx.org/freepbx17-prod bookworm main" \
             > /etc/apt/sources.list.d/freepbx.list
           apt-get update
 
-      - name: Install asterisk23-devel (must match the target Asterisk build exactly)
-        run: DEBIAN_FRONTEND=noninteractive apt-get install -y asterisk23-devel
+      - name: Install asterisk${{ matrix.ast }}-devel (must match the target Asterisk build exactly)
+        run: DEBIAN_FRONTEND=noninteractive apt-get install -y asterisk${{ matrix.ast }}-devel
 
-      - name: Build chan_sccp.so
+      - name: Configure (no version flag - the release must prove autodetection works)
         run: |
           ./tools/bootstrap.sh
-          ./configure --with-asterisk-version=23.0 \
-            --enable-conference --enable-advanced-functions \
-            --enable-distributed-devicestate --enable-video
-          make -j2
+          ./configure --enable-conference --enable-advanced-functions \
+            --enable-distributed-devicestate --enable-video | tee configure.log
+          # 1<major>00 is what a packaged Asterisk yields; anything else means
+          # detection picked the wrong wrapper and the .so would be wrong too.
+          grep -q "Found 'Asterisk Version 1${{ matrix.ast }}" configure.log \
+            || { echo "Asterisk version autodetection did not land on ${{ matrix.ast }}"; grep "Asterisk Version" configure.log; exit 1; }
+
+      - name: Build chan_sccp.so
+        run: make -j2
 
       - name: Package binary
         run: |
           mkdir -p dist
-          cp src/.libs/chan_sccp.so dist/chan_sccp-ast23-sng12.so
+          cp src/.libs/chan_sccp.so dist/chan_sccp-ast${{ matrix.ast }}-sng12.so
+          file dist/chan_sccp-ast${{ matrix.ast }}-sng12.so | grep -q 'ELF 64-bit'
 
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" dist/chan_sccp-ast23-sng12.so --clobber
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" dist/chan_sccp-ast${{ matrix.ast }}-sng12.so --clobber
 
-  # Asterisk 20 / sng7 (CentOS 7) target is NOT built here yet. Unlike the
-  # sng12/apt side above (verified live against a real box, see .github/keys),
-  # nobody has confirmed the actual yum/dnf repo URL + GPG key that ships
-  # asterisk20-devel for sng7 - no sng7 box was available to check against,
-  # and guessing a repo URL for an unsigned/unverified package source is
-  # worse than not building the target at all. Add an sng7 job here once
-  # that's actually confirmed against a real system.
+  # FreePBX 16 (CentOS 7 based, "sng7") ships Asterisk 18 and 20. Those two
+  # binaries are built on real sng7 boxes with the asterisk<major>-devel from
+  # Sangoma's own yum repo and attached to the release by hand: CentOS 7 is
+  # end of life and its container images no longer resolve their base repos,
+  # so a CI job would be building against a moving, unverifiable target.

@@ -1,3 +1,18 @@
+chan-sccp (4.4.0-1) unstable; urgency=medium
+
+  * First release of the nortien fork line. Builds and runs on Asterisk 13
+    through 23 (FreePBX 16 and 17); ./configure detects the Asterisk version
+    on its own again, --with-asterisk-version is no longer needed.
+  * Two full security and correctness reviews applied: the critical, high,
+    medium and low findings are fixed and re-verified on a phone bench; the
+    dead, disabled and unfinished code is annotated in place, not deleted.
+  * Asterisk 20-23 wrappers (macroexten/macrocontext compat), the 13/14/15
+    wrappers brought up to the same fixes.
+  * useRedialMenu on by default in the provisioning templates; the phone's
+    own placed-calls list drives Redial.
+
+ -- nortien <17888414+nortien@users.noreply.github.com>  Thu, 11 Sep 2026 10:00:00 +0300
+
 chan-sccp (4.3.4-1) unstable; urgency=medium
 
   * Enhancements:

@@ -1,8 +1,16 @@
-Version: 4.3.5_stable
+Version: 4.4.0_stable
 ==========================
 
- - Support for Asterisk 20, 21, 22 and 23, and for FreePBX 17 on Debian 12.
+ - First release of the nortien fork line; version bumped because the tree
+   differs substantially from upstream 4.3.5.
+ - Support for Asterisk 20, 21, 22 and 23, and for FreePBX 17 on Debian 12;
+   the Asterisk 13, 14 and 15 wrappers brought up to the same fixes.
  - Asterisk version auto-detection no longer needs --with-asterisk-version.
+ - Two full security and correctness reviews applied: buffer bounds, reference
+   counting, locking, session teardown, AMI and CLI argument handling.
+ - useRedialMenu is on by default: the Redial softkey opens the phone's own
+   placed-calls list.
+ - Dead, disabled and unfinished code is annotated in place, not removed.
  - Fixes to line-button array handling, session thread teardown, RTP payload
    registration, ACL printing and configuration reload.
  - `make dist` works again: the ChangeLog rule no longer depends on a tag that

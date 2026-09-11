@@ -96,7 +96,7 @@ static const SCCPConfigOption sccpGlobalConfigOptions[]={
 	{"earlyrtp", 			G_OBJ_REF(earlyrtp), 			TYPE_PARSER(sccp_config_parse_earlyrtp),					SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"yes",				"valid options: yes / no."
 																																					"Deprecated options: none, offhook, immediate, dial, ringout and progress. 'none' maps to 'no' and the rest maps to 'yes'.\n"
 																																					"The audio stream will be open in the 'true' state by default.\n"},
-	{"dnd", 			G_OBJ_REF(dndFeature), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_OBSOLETE,					SCCP_CONFIG_NOUPDATENEEDED,		"on",				"(OBSOLETE) Turn on the dnd softkey for all devices. Valid values are 'off', 'on' (replaced by in favor of 'dndFeature').\n"},
+	{"dnd", 			G_OBJ_REF(dndFeature), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_OBSOLETE,					SCCP_CONFIG_NOUPDATENEEDED,		"on",				"(OBSOLETE) Replaced by 'dndFeature'. Turns the dnd softkey on for all devices; valid values are 'off', 'on'. Not the same as 'dnd' in a [device] or [line] section, which selects the dnd action (off/reject/silent).\n"},
 	{"dndFeature",			G_OBJ_REF(dndFeature), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NEEDDEVICERESET,		"on",				"Turn on the dnd softkey for all devices. Valid values are 'off', 'on'.\n"},
 	{"private", 			G_OBJ_REF(privacy), 			TYPE_BOOLEAN,									SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"yes",				"permit the private function softkey\n"},
 	{"mwilamp", 			G_OBJ_REF(mwilamp), 			TYPE_ENUM(skinny,lampmode),							SCCP_CONFIG_FLAG_NONE,						SCCP_CONFIG_NOUPDATENEEDED,		"on",				"Set the MWI lamp style when MWI active to on, off, wink, flash or blink\n"}, 
