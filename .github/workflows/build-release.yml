@@ -63,8 +63,10 @@ jobs:
       - name: Configure (no version flag - the release must prove autodetection works)
         run: |
           ./tools/bootstrap.sh
-          ./configure --enable-conference --enable-advanced-functions \
-            --enable-distributed-devicestate --enable-video | tee configure.log
+          # The same two options the README recommends. --enable-advanced-functions
+          # adds nothing usable (see the README table) and
+          # --enable-distributed-devicestate is a no-op on Asterisk 13 and later.
+          ./configure --enable-conference --enable-video | tee configure.log
           # 1<major>00 is what a packaged Asterisk yields; anything else means
           # detection picked the wrong wrapper and the .so would be wrong too.
           grep -q "Found 'Asterisk Version 1${{ matrix.ast }}" configure.log \
